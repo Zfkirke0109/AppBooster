@@ -70,7 +70,7 @@ class AdbRepositoryImplTest {
     }
 
     @Test
-    fun `given compile command fails when force optimization runs then fails fast without marking package optimized`() = runTest {
+    fun `given compile command fails for one package when optimizing then continues and completes remaining packages`() = runTest {
         val goodPackage = "com.example.good"
         val failingPackage = "com.example.bad"
         val runId = 42L
@@ -142,10 +142,12 @@ class AdbRepositoryImplTest {
             forceOptimize = true
         )
 
-        assertTrue(result is Resource.Error)
-        assertTrue(repository.optimizationProgress.value.result is OptimizationResult.Failed)
+        // A single package failing to compile (e.g. a Knox/OEM-protected system
+        // package) must not abort the whole run: every other package should
+        // still be located and processed, and the run should finish normally.
+        assertTrue(result is Resource.Success)
+        assertTrue(repository.optimizationProgress.value.result is OptimizationResult.Completed)
         assertEquals(1, repository.optimizationProgress.value.processedCount)
-        assertEquals(failingPackage, repository.optimizationProgress.value.currentAppPackage)
         assertTrue(repository.logEntries.value.any { entry ->
             entry.type == LogEntryType.ERROR && entry.packageName == failingPackage
         })

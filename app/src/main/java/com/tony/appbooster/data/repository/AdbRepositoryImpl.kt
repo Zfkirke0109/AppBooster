@@ -58,6 +58,11 @@ class AdbRepositoryImpl @Inject constructor(
     private val settingsRepository: SettingsRepository
 ) : AdbRepository {
 
+    companion object {
+        /** Max failed package names listed by name in the end-of-run failure summary log. */
+        private const val FAILED_PACKAGES_LOG_PREVIEW_COUNT = 10
+    }
+
     private val _connectionState =
         MutableStateFlow<AdbConnectionState>(AdbConnectionState.Disconnected)
     override val connectionState = _connectionState.asStateFlow()
@@ -615,11 +620,22 @@ class AdbRepositoryImpl @Inject constructor(
     /**
      * Iterates over [packages] and compiles each one, checking for
      * cancellation between iterations.
+     *
+     * A failure compiling a single package (e.g. a Samsung/Knox-protected
+     * system package that rejects `cmd package compile`, or a transient
+     * Shizuku/Binder error) no longer aborts the entire run. Each package is
+     * compiled independently: failures are recorded against that step only,
+     * and the loop continues so every remaining package is still located and
+     * processed. This ensures "optimize all apps" reliably reaches every
+     * installed package instead of silently stopping partway through on
+     * devices with many OEM/Knox packages that may not all be compilable.
      */
     private suspend fun compilePackages(
         plan: OptimizationRunPlan,
         compileMode: String
     ) {
+        val failedPackages = mutableListOf<String>()
+
         plan.steps.forEach { step ->
             if (step.status == OptimizationStepStatus.SUCCEEDED) return@forEach
             if (checkCancelled(plan.runId, _optimizationProgress.value.processedCount)) return
@@ -643,14 +659,11 @@ class AdbRepositoryImpl @Inject constructor(
             logger.addLog("> ${command.displayCommand}")
 
             val commandResult = shellDataSource.executeCommandDetailed(command)
+                .mapCatching { it.requireSuccess(command.displayCommand) }
                 .getOrElse { throwable ->
                     recordStepFailure(step.id, packageName, throwable)
-                    throw throwable
-                }
-                .runCatchingRequireSuccess(command.displayCommand)
-                .getOrElse { throwable ->
-                    recordStepFailure(step.id, packageName, throwable)
-                    throw throwable
+                    failedPackages += packageName
+                    return@forEach
                 }
 
             logger.addLog("Success: optimized $packageName")
@@ -680,6 +693,16 @@ class AdbRepositoryImpl @Inject constructor(
             )
 
             if (checkCancelled(plan.runId, newCount)) return
+        }
+
+        if (failedPackages.isNotEmpty()) {
+            val failedCount = failedPackages.size
+            val namesPreview = failedPackages.take(FAILED_PACKAGES_LOG_PREVIEW_COUNT).joinToString(", ")
+            val remaining = failedCount - minOf(failedCount, FAILED_PACKAGES_LOG_PREVIEW_COUNT)
+            val namesSummary = if (remaining > 0) "$namesPreview, and $remaining more" else namesPreview
+            logger.addLog("⚠ $failedCount app(s) failed to optimize and were skipped ($namesSummary); the rest were processed normally.")
+            logger.addLogEntry(LogEntryType.ERROR, messageKey = LogMessageKey.OPTIMIZATION_FAILED_APP,
+                detail = "$failedCount app(s) skipped due to errors: $namesSummary")
         }
     }
 
@@ -875,11 +898,6 @@ class AdbRepositoryImpl @Inject constructor(
         val isResumed: Boolean
     )
 }
-
-private fun com.tony.appbooster.domain.model.common.ShellCommandResult.runCatchingRequireSuccess(
-    command: String
-): Result<com.tony.appbooster.domain.model.common.ShellCommandResult> =
-    runCatching { requireSuccess(command) }
 
 private fun AppOptimizationType.displayName(): String = when (this) {
     AppOptimizationType.SPEED_PROFILE -> "Balanced Daily"

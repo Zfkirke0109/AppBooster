@@ -12,6 +12,25 @@ sealed interface ShellCommandSpec {
         override val displayCommand: String = argv.joinToString(" ")
     }
 
+    /**
+     * Lightweight package enumeration via `pm list packages`.
+     *
+     * Unlike [DumpsysPackage], this returns a single `package:<name>` line per
+     * installed package with no additional metadata. On devices with a large
+     * number of installed apps (e.g. Samsung phones with extensive OEM/Knox
+     * bloatware), the full `dumpsys package` dump can exceed the Binder IPC
+     * transaction size limit when marshalled back through the Shizuku
+     * UserService, causing the query to fail and silently return zero
+     * packages. `pm list packages` output is orders of magnitude smaller and
+     * safely stays within Binder limits regardless of how many apps/packages
+     * are installed, so it is used as the primary source for enumerating all
+     * installed packages.
+     */
+    data object ListPackages : ShellCommandSpec {
+        override val argv: List<String> = listOf("pm", "list", "packages")
+        override val displayCommand: String = argv.joinToString(" ")
+    }
+
     data object DumpsysPackageDexopt : ShellCommandSpec {
         override val argv: List<String> = listOf("dumpsys", "package", "dexopt")
         override val displayCommand: String = argv.joinToString(" ")
@@ -94,6 +113,7 @@ sealed interface ShellCommandSpec {
         fun isAllowedArgv(argv: List<String>): Boolean {
             return when {
                 argv == DumpsysPackage.argv -> true
+                argv == ListPackages.argv -> true
                 argv == DumpsysPackageDexopt.argv -> true
                 argv == DumpsysThermalService.argv -> true
                 argv.size == 3 &&
