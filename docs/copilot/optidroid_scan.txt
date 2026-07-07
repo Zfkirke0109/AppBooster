@@ -1,0 +1,78 @@
+# Copilot Diagnostic Context - optidroid_scan.txt
+
+Source context: condensed Copilot-visible notes from the uploaded Android logcat file `optidroid_scan.txt`.
+
+Raw uploaded file details from local inspection:
+- File name: optidroid_scan.txt
+- Size: 3,306,851 bytes
+- Lines: 9,094
+- Main package: com.zfkirke0109.galaxyoptidroid
+- Main activity observed: com.tony.appbooster.presentation.activity.MainActivity
+- Foreground service observed: androidx.work.impl.foreground.SystemForegroundService
+- Notification ID observed repeatedly: 1001
+- Notification channel observed repeatedly: optimization
+
+Important raw log patterns observed:
+
+1. Foreground service starts through WorkManager/SystemForegroundService.
+
+Example pattern:
+ActivityManager: Background started FGS: Allowed [callingPackage: com.zfkirke0109.galaxyoptidroid; callingUid: 10587; uidState: TOP; intent: Intent { act=ACTION_START_FOREGROUND cmp=com.zfkirke0109.galaxyoptidroid/androidx.work.impl.foreground.SystemForegroundService }; targetSdkVersion:36; callerTargetSdkVersion:36; startForegroundCount:1]
+
+2. NotificationManager repeatedly posts the same foreground notification.
+
+Example pattern:
+NotificationManager: com.zfkirke0109.galaxyoptidroid: notify(1001, null, Notification(channel=optimization shortcut=null contentView=null vibrate=null sound=null defaults=0 flags=ONGOING_EVENT|ONLY_ALERT_ONCE color=0x00000000 actions=1 vis=PRIVATE semFlags=0x0 semPriority=0 semMissedCount=0 semScenarioType=0)) as user
+
+3. NotificationService repeatedly sees the same foreground-service notification state.
+
+Example pattern:
+NotificationService: isVisibleToListenerForLog() notiType = 4, sbn = StatusBarNotification(pkg=com.zfkirke0109.galaxyoptidroid user=UserHandle{0} id=1001 tag=null key=0|com.zfkirke0109.galaxyoptidroid|1001|null|10587: Notification(channel=optimization ... flags=ONGOING_EVENT|ONLY_ALERT_ONCE|NO_CLEAR|FOREGROUND_SERVICE ...))
+
+4. Android starts shedding notification enqueues because the app posts too frequently.
+
+Example pattern:
+NotificationService: Package enqueue rate is 5.107051. Shedding 0|com.zfkirke0109.galaxyoptidroid|1001|null|10587. package=com.zfkirke0109.galaxyoptidroid
+
+Other observed shedding rates include approximately 6.746319, 6.9532027, and 6.999876 notifications/sec.
+
+5. The repeated notification update issue appears during optimization foreground work and app launch/resume periods.
+
+Example pattern:
+WindowManager: Collecting in transition ... Task ... com.zfkirke0109.galaxyoptidroid
+WindowManager: prepareSync ... com.zfkirke0109.galaxyoptidroid/com.tony.appbooster.presentation.activity.MainActivity
+Pageboost: start alp : com.zfkirke0109.galaxyoptidroid
+SGM:FgCheckThread: handleResume(). pkgName: com.zfkirke0109.galaxyoptidroid, userId: 0, category: non-game
+
+Likely engineering conclusion for Copilot:
+The app is probably over-updating its ongoing foreground-service notification while optimization work is running. Android is explicitly rate-shedding notification enqueues for package `com.zfkirke0109.galaxyoptidroid`, notification ID `1001`, on channel `optimization`.
+
+Copilot implementation guidance:
+
+- Search for WorkManager workers, foreground optimization workers, foreground-service notification builders, and `notify(1001, ...)` or equivalent constants.
+- Centralize foreground optimization notification updates behind a throttle/debounce layer.
+- Do not call `NotificationManager.notify()` for every tiny progress/event tick.
+- Only update the notification when user-visible fields actually change.
+- For progress, coalesce updates. Prefer at most 1 update/sec unless the operation begins, completes, fails, is cancelled, or changes phase.
+- Cache the last published notification state, including title, text, progress max/value, indeterminate state, action set, and importance-sensitive fields.
+- Skip publishing when the next notification state equals the last published state.
+- Keep the foreground-service notification alive; do not remove the required ongoing foreground notification while work is still active.
+- Keep `setForeground()` / `setForegroundAsync()` calls minimal. Use them when entering foreground work or when materially changing foreground info, not for every progress tick.
+- Ensure the notification channel `optimization` is created once, not repeatedly in hot paths.
+- Add structured debug logging around notification publish decisions:
+  - published
+  - skipped_duplicate
+  - skipped_throttled
+  - forced_terminal_update
+- Consider a small testable class such as `OptimizationNotificationThrottler`, `ForegroundNotificationState`, or `OptimizationNotificationPublisher`.
+
+Suggested acceptance checks:
+
+- Running one optimization job should not produce Android `NotificationService: Package enqueue rate ... Shedding` errors.
+- Foreground-service notification remains visible and compliant during active work.
+- Progress still updates smoothly enough for users but not faster than the throttle limit.
+- Final completion/cancel/error state is always published immediately, bypassing normal throttling.
+- No broad notification behavior changes outside the optimization foreground-service notification path.
+
+Repository note:
+This file is intentionally tracked as Copilot diagnostic context. `.gitignore` has a narrow exception for `docs/copilot/optidroid_scan.txt` even though general `*.txt` files remain ignored.
