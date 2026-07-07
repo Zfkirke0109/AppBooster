@@ -16,5 +16,13 @@ sealed interface SettingsUiEvent {
      * @property type New optimization mode chosen in the UI.
      */
     data class OnOptimizationTypeSelected(val type: AppOptimizationType) : SettingsUiEvent
+
+    data class OnHeavyAppPackageInputChanged(val packageName: String) : SettingsUiEvent
+
+    data object OnAddHeavyAppPackageClicked : SettingsUiEvent
+
+    data class OnRemoveHeavyAppPackageClicked(val packageName: String) : SettingsUiEvent
+
+    data class OnRollbackPackageClicked(val packageName: String) : SettingsUiEvent
 }
 

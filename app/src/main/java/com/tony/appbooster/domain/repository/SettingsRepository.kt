@@ -23,6 +23,10 @@ interface SettingsRepository {
      */
     fun observeAppOptimizationType(): Flow<Resource<AppOptimizationType>>
 
+    fun observeHeavyAppPackages(): Flow<Resource<Set<String>>>
+
+    suspend fun getHeavyAppPackages(): Resource<Set<String>>
+
     /**
      * Persists the chosen optimization mode to durable storage so it is
      * restored on next launch.
@@ -32,5 +36,9 @@ interface SettingsRepository {
      */
     suspend fun setAppOptimizationType(
         type: AppOptimizationType
+    ): Resource<Unit>
+
+    suspend fun setHeavyAppPackages(
+        packageNames: Set<String>
     ): Resource<Unit>
 }

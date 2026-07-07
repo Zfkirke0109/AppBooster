@@ -1,13 +1,18 @@
 package com.tony.appbooster.presentation.viewmodel.settings
 
 import com.tony.appbooster.presentation.navigation.interfaces.NavigationManager
+import com.tony.appbooster.domain.model.common.OptimizationRollbackCandidate
 import com.tony.appbooster.domain.model.common.Resource
 import com.tony.appbooster.domain.model.common.ResourceError
 import com.tony.appbooster.domain.model.settings.AppOptimizationType
 import com.tony.appbooster.domain.model.shizuku.ShizukuState
 import com.tony.appbooster.domain.usecase.appinfo.GetAppInfoUseCase
+import com.tony.appbooster.domain.usecase.optimization.ObserveRollbackCandidatesUseCase
+import com.tony.appbooster.domain.usecase.optimization.RollbackOptimizationUseCase
 import com.tony.appbooster.domain.usecase.settings.ObserveAppOptimizationTypeUseCase
+import com.tony.appbooster.domain.usecase.settings.ObserveHeavyAppPackagesUseCase
 import com.tony.appbooster.domain.usecase.settings.SetAppOptimizationTypeUseCase
+import com.tony.appbooster.domain.usecase.settings.SetHeavyAppPackagesUseCase
 import com.tony.appbooster.domain.usecase.shizuku.ObserveShizukuStateUseCase
 import com.tony.appbooster.presentation.screen.settings.model.AppInfo
 import io.mockk.coEvery
@@ -40,12 +45,18 @@ class SettingsViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
 
     private val shizukuStateFlow = MutableStateFlow<ShizukuState>(ShizukuState.NotRunning)
+    private val heavyPackagesFlow = MutableStateFlow<Resource<Set<String>>>(Resource.Success(emptySet()))
+    private val rollbackCandidatesFlow = MutableStateFlow<List<OptimizationRollbackCandidate>>(emptyList())
 
     private lateinit var navigationManager: NavigationManager
     private lateinit var observeAppOptimizationTypeUseCase: ObserveAppOptimizationTypeUseCase
+    private lateinit var observeHeavyAppPackagesUseCase: ObserveHeavyAppPackagesUseCase
     private lateinit var setAppOptimizationTypeUseCase: SetAppOptimizationTypeUseCase
+    private lateinit var setHeavyAppPackagesUseCase: SetHeavyAppPackagesUseCase
     private lateinit var getAppInfoUseCase: GetAppInfoUseCase
     private lateinit var observeShizukuStateUseCase: ObserveShizukuStateUseCase
+    private lateinit var observeRollbackCandidatesUseCase: ObserveRollbackCandidatesUseCase
+    private lateinit var rollbackOptimizationUseCase: RollbackOptimizationUseCase
 
     @Before
     fun setUp() {
@@ -53,12 +64,18 @@ class SettingsViewModelTest {
 
         navigationManager = mockk(relaxed = true)
         observeAppOptimizationTypeUseCase = mockk()
+        observeHeavyAppPackagesUseCase = mockk()
         setAppOptimizationTypeUseCase = mockk()
+        setHeavyAppPackagesUseCase = mockk()
         getAppInfoUseCase = mockk()
         observeShizukuStateUseCase = mockk()
+        observeRollbackCandidatesUseCase = mockk()
+        rollbackOptimizationUseCase = mockk()
 
         every { observeShizukuStateUseCase() } returns shizukuStateFlow
         every { observeAppOptimizationTypeUseCase() } returns flowOf(Resource.Success(AppOptimizationType.SPEED_PROFILE))
+        every { observeHeavyAppPackagesUseCase() } returns heavyPackagesFlow
+        every { observeRollbackCandidatesUseCase() } returns rollbackCandidatesFlow
         coEvery { getAppInfoUseCase() } returns Resource.Success(AppInfo("1.0.0", "Alpha"))
     }
 
@@ -70,9 +87,13 @@ class SettingsViewModelTest {
     private fun createViewModel() = SettingsViewModel(
         navigationManager = navigationManager,
         observeAppOptimizationTypeUseCase = observeAppOptimizationTypeUseCase,
+        observeHeavyAppPackagesUseCase = observeHeavyAppPackagesUseCase,
         setAppOptimizationTypeUseCase = setAppOptimizationTypeUseCase,
+        setHeavyAppPackagesUseCase = setHeavyAppPackagesUseCase,
         getAppInfoUseCase = getAppInfoUseCase,
-        observeShizukuStateUseCase = observeShizukuStateUseCase
+        observeShizukuStateUseCase = observeShizukuStateUseCase,
+        observeRollbackCandidatesUseCase = observeRollbackCandidatesUseCase,
+        rollbackOptimizationUseCase = rollbackOptimizationUseCase
     )
 
     // ── Optimization type observation ─────────────────────────────────────────
@@ -92,6 +113,33 @@ class SettingsViewModelTest {
         advanceUntilIdle()
 
         assertEquals(AppOptimizationType.FULL_OPTIMIZATION, vm.uiState.value.data?.appOptimizationType)
+    }
+
+    @Test
+    fun `given heavy package set emitted when created then uiState reflects packages`() = runTest {
+        val packages = setOf("com.example.game")
+        heavyPackagesFlow.value = Resource.Success(packages)
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        assertEquals(packages, vm.uiState.value.data?.heavyAppPackages)
+    }
+
+    @Test
+    fun `given rollback candidates emitted when created then uiState reflects candidates`() = runTest {
+        val candidates = listOf(
+            OptimizationRollbackCandidate(
+                packageName = "com.example.game",
+                beforeFilter = "verify",
+                afterFilter = "speed",
+                optimizedAtMs = 10L
+            )
+        )
+        rollbackCandidatesFlow.value = candidates
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        assertEquals(candidates, vm.uiState.value.data?.rollbackCandidates)
     }
 
     // ── App info loading ──────────────────────────────────────────────────────
@@ -185,6 +233,34 @@ class SettingsViewModelTest {
 
         // BaseViewModel sets error state on failure
         assertEquals(true, vm.uiState.value.showErrorDialog)
+    }
+
+    @Test
+    fun `given valid heavy package input when add clicked then persists package and clears input`() = runTest {
+        coEvery { setHeavyAppPackagesUseCase(setOf("com.example.game")) } returns Resource.Success(Unit)
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        vm.onHeavyAppPackageInputChanged("com.example.game")
+        vm.onAddHeavyAppPackageClicked()
+        advanceUntilIdle()
+
+        assertEquals(setOf("com.example.game"), vm.uiState.value.data?.heavyAppPackages)
+        assertEquals("", vm.uiState.value.data?.heavyAppPackageInput)
+        coVerify(exactly = 1) { setHeavyAppPackagesUseCase(setOf("com.example.game")) }
+    }
+
+    @Test
+    fun `given rollback package clicked then calls rollback use case`() = runTest {
+        coEvery { rollbackOptimizationUseCase("com.example.game") } returns Resource.Success(Unit)
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        vm.onRollbackPackageClicked("com.example.game")
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { rollbackOptimizationUseCase("com.example.game") }
+        assertEquals(null, vm.uiState.value.data?.rollingBackPackageName)
     }
 
     // ── Event dispatch via onEvent ────────────────────────────────────────────

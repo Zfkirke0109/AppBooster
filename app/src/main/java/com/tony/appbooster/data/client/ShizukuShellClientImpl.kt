@@ -11,6 +11,7 @@ import androidx.core.net.toUri
 import com.tony.appbooster.BuildConfig
 import com.tony.appbooster.IShellService
 import com.tony.appbooster.domain.client.ShizukuShellClient
+import com.tony.appbooster.domain.model.common.ShellCommandSpec
 import com.tony.appbooster.domain.model.shizuku.ShellResult
 import com.tony.appbooster.domain.model.shizuku.ShizukuState
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -52,6 +53,7 @@ class ShizukuShellClientImpl @Inject constructor(
         ComponentName(BuildConfig.APPLICATION_ID, ShellService::class.java.name)
     )
         .daemon(false)
+        .tag("appbooster-shell-v1")
         .processNameSuffix("shell")
         .debuggable(BuildConfig.DEBUG)
         .version(BuildConfig.VERSION_CODE)
@@ -255,7 +257,7 @@ class ShizukuShellClientImpl @Inject constructor(
         return shellService != null
     }
 
-    override suspend fun execute(command: String): ShellResult = withContext(ioDispatcher) {
+    override suspend fun execute(command: ShellCommandSpec): ShellResult = withContext(ioDispatcher) {
         if (!isReady()) {
             throw IllegalStateException("Shizuku is not ready. Current state: ${_state.value}")
         }
@@ -285,7 +287,7 @@ class ShizukuShellClientImpl @Inject constructor(
             val service = shellService
             if (service != null) {
                 try {
-                    val result = service.executeCommand(command)
+                    val result = service.executeCommand(command.argv.toTypedArray())
                     ShellResult(
                         exitCode = result[0].toIntOrNull() ?: -1,
                         output = result[1],
@@ -312,7 +314,7 @@ class ShizukuShellClientImpl @Inject constructor(
         }
     }
 
-    override fun executeStreaming(command: String): Flow<Result<String>> = flow {
+    override fun executeStreaming(command: ShellCommandSpec): Flow<Result<String>> = flow {
         if (!isReady()) {
             emit(Result.failure(IllegalStateException("Shizuku is not ready")))
             return@flow

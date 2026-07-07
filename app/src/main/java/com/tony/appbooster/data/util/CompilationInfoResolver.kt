@@ -3,6 +3,7 @@ package com.tony.appbooster.data.util
 import com.tony.appbooster.domain.client.AdbShellDataSource
 import com.tony.appbooster.domain.model.common.AppCompilationInfo
 import com.tony.appbooster.domain.model.common.LogEntryType
+import com.tony.appbooster.domain.model.common.ShellCommandSpec
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -19,7 +20,7 @@ import javax.inject.Singleton
  * 2. **`dumpsys package dexopt`** — single call cached for the entire run.
  * 3. **`dumpsys package <pkg>`** — per-package fallback.
  * 4. **`cmd package compile --check`** — per-package binary yes/no.
- * 5. **OAT file scan (`ls`)** — absolute last resort.
+ * 5. Conservative fallback when dumpsys cannot report a compiler filter.
  *
  * @property shellDataSource Data source that executes shell commands.
  * @property logger Shared logger for diagnostic output.
@@ -112,10 +113,8 @@ class CompilationInfoResolver @Inject constructor(
         // ── Step 4: compile --check ────────────────────────────────────────────
         fromCompileCheck(packageName, lastUpdateTimeMs)?.let { return it }
 
-        // ── Step 5: OAT file scan ──────────────────────────────────────────────
-        val oatFilter = fromOatScan(packageName)
-
-        return resolveCompilationInfo(packageName, oatFilter, lastUpdateTimeMs, targetFilter)
+        // ── Step 5: conservative fallback ─────────────────────────────────────
+        return resolveCompilationInfo(packageName, null, lastUpdateTimeMs, targetFilter)
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -187,7 +186,7 @@ class CompilationInfoResolver @Inject constructor(
         logger.addLogEntry(LogEntryType.ANALYZING, "Fallback: package dump",
             packageName = packageName, detail = "dumpsys package")
 
-        val output = shellDataSource.executeCommand("dumpsys package $packageName")
+        val output = shellDataSource.executeCommand(ShellCommandSpec.DumpsysPackageForPackage(packageName))
             .getOrNull()
 
         if (output == null) {
@@ -233,7 +232,7 @@ class CompilationInfoResolver @Inject constructor(
             packageName = packageName, detail = "cmd package compile --check")
 
         val checkResult = shellDataSource.executeCommandDetailed(
-            "cmd package compile --check $packageName"
+            ShellCommandSpec.PackageCompileCheck(packageName)
         )
         val check = checkResult.getOrNull()
 
@@ -267,41 +266,6 @@ class CompilationInfoResolver @Inject constructor(
             }
         }
         return null
-    }
-
-    /**
-     * Step 5 — checks for compiled OAT artifacts on disk.
-     *
-     * @return Compiler filter marker string, or null if no artefacts found.
-     */
-    private suspend fun fromOatScan(packageName: String): String? {
-        logger.addLogEntry(LogEntryType.ANALYZING, "Fallback: oat scan",
-            packageName = packageName, detail = "ls /data/app/.../oat")
-
-        val oatResult = shellDataSource.executeCommand(
-            "ls /data/app/*$packageName*/oat/arm64/*.odex || " +
-                "ls /data/app/*$packageName*/oat/arm/*.odex"
-        )
-
-        val output = oatResult.getOrNull()
-        if (output == null) {
-            logger.addLogEntry(LogEntryType.ERROR, "OAT scan failed",
-                packageName = packageName, detail = oatResult.exceptionOrNull()?.message)
-            return null
-        }
-
-        val trimmed = output.trim()
-        return if (trimmed.isNotEmpty() &&
-            !output.contains("No such file", ignoreCase = true) &&
-            !output.contains("Permission denied", ignoreCase = true)
-        ) {
-            logger.addLogEntry(LogEntryType.INFO, "OAT files found", packageName = packageName)
-            "unknown-optimized"
-        } else {
-            logger.addLogEntry(LogEntryType.INFO, "OAT files not accessible",
-                packageName = packageName)
-            null
-        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -368,7 +332,7 @@ class CompilationInfoResolver @Inject constructor(
         packageName: String
     ): Pair<Boolean, AppCompilationInfo.SkipReason?> {
         val dump = cachedPackageDumps[packageName] ?: run {
-            shellDataSource.executeCommand("dumpsys package $packageName")
+            shellDataSource.executeCommand(ShellCommandSpec.DumpsysPackageForPackage(packageName))
                 .getOrNull()?.also { cachedPackageDumps[packageName] = it }
         }
         val isOverlay = PackageClassifier.isOverlayLike(packageName, dump)
@@ -394,7 +358,7 @@ class CompilationInfoResolver @Inject constructor(
      * @return Dexopt dump string on success, or null on failure.
      */
     private suspend fun fetchDexoptDump(): String? {
-        val result = shellDataSource.executeCommandDetailed("dumpsys package dexopt")
+        val result = shellDataSource.executeCommandDetailed(ShellCommandSpec.DumpsysPackageDexopt)
         val dexopt = result.getOrNull()
 
         when {

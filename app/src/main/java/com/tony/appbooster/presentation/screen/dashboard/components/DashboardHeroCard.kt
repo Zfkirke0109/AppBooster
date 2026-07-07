@@ -130,6 +130,12 @@ fun DashboardHeroCard(
                 result is OptimizationResult.Canceled
                     && !model.isCurrentResultDismissed -> HeroPhase.RESULT_CANCELED
 
+                result is OptimizationResult.Failed
+                    && !model.isCurrentResultDismissed -> HeroPhase.RESULT_FAILED
+
+                result is OptimizationResult.Paused
+                    && !model.isCurrentResultDismissed -> HeroPhase.RESULT_PAUSED
+
                 progress.isRunning -> HeroPhase.OPTIMIZING
 
                 model.optimizationAnalysis.isScanning -> HeroPhase.SCANNING
@@ -215,6 +221,38 @@ fun DashboardHeroCard(
                     HeroPhase.RESULT_CANCELED -> {
                         HeroResultPanel(
                             status = HeroCardStatus.Canceled(
+                                processedCount = model.optimizationProgress.processedCount,
+                                skippedCount = model.optimizationProgress.skippedCount,
+                                totalCount = model.optimizationProgress.totalCount,
+                                noProfileCount = model.optimizationAnalysis.appsWithNoProfile,
+                                optimizationMode = model.optimizationMode
+                            ),
+                            onDismiss = onDismissResult,
+                            onRunAgain = onStartOptimization,
+                            onForceOptimize = onForceOptimize
+                        )
+                    }
+
+                    HeroPhase.RESULT_FAILED -> {
+                        HeroResultPanel(
+                            status = HeroCardStatus.Failed(
+                                processedCount = model.optimizationProgress.processedCount,
+                                skippedCount = model.optimizationProgress.skippedCount,
+                                totalCount = model.optimizationProgress.totalCount,
+                                noProfileCount = model.optimizationAnalysis.appsWithNoProfile,
+                                optimizationMode = model.optimizationMode
+                            ),
+                            onDismiss = onDismissResult,
+                            onRunAgain = onStartOptimization,
+                            onForceOptimize = onForceOptimize
+                        )
+                    }
+
+                    HeroPhase.RESULT_PAUSED -> {
+                        val paused = model.optimizationProgress.result as OptimizationResult.Paused
+                        HeroResultPanel(
+                            status = HeroCardStatus.Paused(
+                                reason = paused.reason,
                                 processedCount = model.optimizationProgress.processedCount,
                                 skippedCount = model.optimizationProgress.skippedCount,
                                 totalCount = model.optimizationProgress.totalCount,
@@ -430,5 +468,7 @@ private enum class HeroPhase {
     OPTIMIZING,
     RESULT_COMPLETED,
     RESULT_CANCELED,
+    RESULT_FAILED,
+    RESULT_PAUSED,
     ALL_OPTIMIZED
 }

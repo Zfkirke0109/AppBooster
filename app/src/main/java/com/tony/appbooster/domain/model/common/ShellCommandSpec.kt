@@ -1,0 +1,151 @@
+package com.tony.appbooster.domain.model.common
+
+/**
+ * Typed allowlist of shell commands the app is allowed to execute.
+ */
+sealed interface ShellCommandSpec {
+    val argv: List<String>
+    val displayCommand: String
+
+    data object DumpsysPackage : ShellCommandSpec {
+        override val argv: List<String> = listOf("dumpsys", "package")
+        override val displayCommand: String = argv.joinToString(" ")
+    }
+
+    data object DumpsysPackageDexopt : ShellCommandSpec {
+        override val argv: List<String> = listOf("dumpsys", "package", "dexopt")
+        override val displayCommand: String = argv.joinToString(" ")
+    }
+
+    data object DumpsysThermalService : ShellCommandSpec {
+        override val argv: List<String> = listOf("dumpsys", "thermalservice")
+        override val displayCommand: String = argv.joinToString(" ")
+    }
+
+    data class DumpsysPackageForPackage(
+        val packageName: String
+    ) : ShellCommandSpec {
+        init {
+            PackageNameValidator.requireValid(packageName)
+        }
+
+        override val argv: List<String> = listOf("dumpsys", "package", packageName)
+        override val displayCommand: String = argv.joinToString(" ")
+    }
+
+    data class PackageCompile(
+        val packageName: String,
+        val mode: String,
+        val force: Boolean = true
+    ) : ShellCommandSpec {
+        init {
+            PackageNameValidator.requireValid(packageName)
+            require(mode in COMPILE_MODES) { "Unsupported compile mode: $mode" }
+        }
+
+        override val argv: List<String> = buildList {
+            add("cmd")
+            add("package")
+            add("compile")
+            add("-m")
+            add(mode)
+            if (force) add("-f")
+            add(packageName)
+        }
+        override val displayCommand: String = argv.joinToString(" ")
+    }
+
+    data class PackageCompileCheck(
+        val packageName: String
+    ) : ShellCommandSpec {
+        init {
+            PackageNameValidator.requireValid(packageName)
+        }
+
+        override val argv: List<String> = listOf("cmd", "package", "compile", "--check", packageName)
+        override val displayCommand: String = argv.joinToString(" ")
+    }
+
+    data class PackageCompileReset(
+        val packageName: String
+    ) : ShellCommandSpec {
+        init {
+            PackageNameValidator.requireValid(packageName)
+        }
+
+        override val argv: List<String> = listOf("cmd", "package", "compile", "--reset", packageName)
+        override val displayCommand: String = argv.joinToString(" ")
+    }
+
+    data class GetStandbyBucket(
+        val packageName: String
+    ) : ShellCommandSpec {
+        init {
+            PackageNameValidator.requireValid(packageName)
+        }
+
+        override val argv: List<String> = listOf("am", "get-standby-bucket", packageName)
+        override val displayCommand: String = argv.joinToString(" ")
+    }
+
+    companion object {
+        private val COMPILE_MODES = setOf("speed-profile", "speed")
+
+        fun isAllowedArgv(argv: List<String>): Boolean {
+            return when {
+                argv == DumpsysPackage.argv -> true
+                argv == DumpsysPackageDexopt.argv -> true
+                argv == DumpsysThermalService.argv -> true
+                argv.size == 3 &&
+                    argv[0] == "dumpsys" &&
+                    argv[1] == "package" ->
+                    PackageNameValidator.isValid(argv[2])
+
+                isAllowedPackageCompile(argv) -> true
+                isAllowedPackageCompileCheck(argv) -> true
+                isAllowedPackageCompileReset(argv) -> true
+                isAllowedGetStandbyBucket(argv) -> true
+                else -> false
+            }
+        }
+
+        private fun isAllowedPackageCompile(argv: List<String>): Boolean {
+            if (argv.size !in setOf(6, 7)) return false
+            if (argv.take(5) != listOf("cmd", "package", "compile", "-m", argv[4])) return false
+            if (argv[4] !in COMPILE_MODES) return false
+
+            return when (argv.size) {
+                6 -> PackageNameValidator.isValid(argv[5])
+                7 -> argv[5] == "-f" && PackageNameValidator.isValid(argv[6])
+                else -> false
+            }
+        }
+
+        private fun isAllowedPackageCompileCheck(argv: List<String>): Boolean =
+            argv.size == 5 &&
+                argv.take(4) == listOf("cmd", "package", "compile", "--check") &&
+                PackageNameValidator.isValid(argv[4])
+
+        private fun isAllowedPackageCompileReset(argv: List<String>): Boolean =
+            argv.size == 5 &&
+                argv.take(4) == listOf("cmd", "package", "compile", "--reset") &&
+                PackageNameValidator.isValid(argv[4])
+
+        private fun isAllowedGetStandbyBucket(argv: List<String>): Boolean =
+            argv.size == 3 &&
+                argv.take(2) == listOf("am", "get-standby-bucket") &&
+                PackageNameValidator.isValid(argv[2])
+    }
+}
+
+object PackageNameValidator {
+    private val PACKAGE_NAME_REGEX =
+        Regex("^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$")
+
+    fun isValid(packageName: String): Boolean = PACKAGE_NAME_REGEX.matches(packageName)
+
+    fun requireValid(packageName: String): String {
+        require(isValid(packageName)) { "Invalid package name: $packageName" }
+        return packageName
+    }
+}

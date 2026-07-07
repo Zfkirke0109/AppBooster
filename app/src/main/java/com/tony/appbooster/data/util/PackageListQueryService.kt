@@ -2,13 +2,14 @@ package com.tony.appbooster.data.util
 
 import com.tony.appbooster.data.util.PackageListQueryService.Companion.SELF_PACKAGE_NAME
 import com.tony.appbooster.domain.client.AdbShellDataSource
+import com.tony.appbooster.domain.model.common.ShellCommandSpec
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
  * Queries installed packages from the device via shell commands.
  *
- * Encapsulates the `pm list packages` parsing logic so that repository
+ * Encapsulates package-list parsing logic so that repository
  * classes can stay focused on orchestration. Parsing is unified in a
  * single [parsePackageLines] method shared by the primary and fallback
  * commands.
@@ -32,16 +33,13 @@ class PackageListQueryService @Inject constructor(
     }
 
     /**
-     * Queries all installed package names from the device.
-     *
-     * Tries the standard `pm list packages` command first; if no packages
-     * are parsed, falls back to `pm list packages -3` (third-party only).
+     * Queries all installed package names from the device using `dumpsys package`.
      *
      * @return List of normalised package names, or an empty list on failure.
      */
     suspend fun queryInstalledPackages(): List<String> {
-        val command = "pm list packages"
-        logger.addLog("> $command")
+        val command = ShellCommandSpec.DumpsysPackage
+        logger.addLog("> ${command.displayCommand}")
         val result = shellDataSource.executeCommand(command)
 
         return result.fold(
@@ -52,13 +50,10 @@ class PackageListQueryService @Inject constructor(
                     return@fold packages
                 }
 
-                // Diagnostics when primary command yields nothing
-                logger.addLog("pm list packages returned no parsable packages.")
+                logger.addLog("dumpsys package returned no parsable packages.")
                 logger.addLog("Raw output length: ${output.length} chars")
                 logger.addLog("Preview: ${output.take(OUTPUT_PREVIEW_LENGTH).replace("\n", "\\n")}")
-                logger.addLog("Trying alternative: pm list packages -3")
-
-                queryAlternativePackageList()
+                emptyList()
             },
             onFailure = { throwable ->
                 logger.addLog("Failed to query installed packages: ${throwable.message}")
@@ -68,39 +63,12 @@ class PackageListQueryService @Inject constructor(
     }
 
     /**
-     * Fallback query using `pm list packages -3` for third-party apps only.
-     *
-     * @return List of normalised package names, or an empty list on failure.
-     */
-    private suspend fun queryAlternativePackageList(): List<String> {
-        val command = "pm list packages -3"
-        logger.addLog("> $command")
-        val result = shellDataSource.executeCommand(command)
-
-        return result.fold(
-            onSuccess = { output ->
-                val packages = parsePackageLines(output)
-                if (packages.isNotEmpty()) {
-                    logger.addLog("Alternative command found ${packages.size} packages")
-                } else {
-                    logger.addLog("Alternative command also returned no packages")
-                    logger.addLog("Output preview: ${output.take(OUTPUT_PREVIEW_LENGTH).replace("\n", "\\n")}")
-                }
-                packages
-            },
-            onFailure = { throwable ->
-                logger.addLog("Alternative command failed: ${throwable.message}")
-                emptyList()
-            }
-        )
-    }
-
-    /**
-     * Parses raw `pm list packages` output into a deduplicated list of
-     * valid package names, excluding [SELF_PACKAGE_NAME].
+     * Parses raw package-list output into a deduplicated list of valid package
+     * names, excluding [SELF_PACKAGE_NAME].
      *
      * Handles multiple line-ending formats (CRLF, LF, CR) and the
-     * standard `package:<name>` prefix used by most Android versions.
+     * Handles the standard `package:<name>` prefix and `dumpsys package`
+     * `Package [<name>]` entries.
      *
      * @param output Raw shell command output.
      * @return Parsed and filtered package name list.
@@ -120,17 +88,20 @@ class PackageListQueryService @Inject constructor(
                     pkg != SELF_PACKAGE_NAME &&
                     !pkg.contains(SELF_PACKAGE_NAME)
             }
+            .distinct()
             .toList()
     }
 
     /**
      * Extracts a package name from a single output line.
      *
-     * @param line Trimmed, non-empty line from `pm list packages`.
+     * @param line Trimmed, non-empty line from package-list output.
      * @return Extracted package name, or null if the line is not parseable.
      */
     private fun extractPackageName(line: String): String? = when {
         line.startsWith("package:") -> line.removePrefix("package:").trim().ifEmpty { null }
+        line.startsWith("Package [") && line.contains("]") ->
+            line.substringAfter("Package [").substringBefore("]").trim().ifEmpty { null }
         // Some Android versions emit bare package names
         line.contains(".") && !line.contains(" ") && !line.contains("=") -> line
         else -> null

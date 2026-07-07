@@ -48,6 +48,7 @@ import com.tony.appbooster.R
 import com.tony.appbooster.presentation.navigation.Screen
 import com.tony.appbooster.presentation.screen.dashboard.DashboardScreen
 import com.tony.appbooster.presentation.screen.settings.SettingsScreen
+import com.tony.appbooster.presentation.screen.survival.SamsungSurvivalScreen
 import com.tony.appbooster.presentation.tools.LocalWindowSizeClass
 import com.tony.appbooster.presentation.tools.NavigationLayoutType
 import com.tony.appbooster.presentation.tools.navigationLayoutType
@@ -86,7 +87,7 @@ fun MainAppScreen(viewModel: MainViewModel) {
 @Composable
 private fun MainAppScreenBottomBar(viewModel: MainViewModel) {
     val bottomNavController = rememberNavController()
-    val items = listOf(Screen.Dashboard, Screen.Settings)
+    val items = listOf(Screen.Dashboard, Screen.SamsungSurvival, Screen.Settings)
 
     Scaffold(
         bottomBar = {
@@ -131,7 +132,7 @@ private fun MainAppScreenBottomBar(viewModel: MainViewModel) {
 @Composable
 private fun MainAppScreenRail(viewModel: MainViewModel) {
     val railNavController = rememberNavController()
-    val items = listOf(Screen.Dashboard, Screen.Settings)
+    val items = listOf(Screen.Dashboard, Screen.SamsungSurvival, Screen.Settings)
 
     Row(modifier = Modifier.fillMaxSize()) {
         val navBackStackEntry by railNavController.currentBackStackEntryAsState()
@@ -180,7 +181,7 @@ private fun MainAppScreenRail(viewModel: MainViewModel) {
 @Composable
 private fun MainAppScreenDrawer(viewModel: MainViewModel) {
     val drawerNavController = rememberNavController()
-    val items = listOf(Screen.Dashboard, Screen.Settings)
+    val items = listOf(Screen.Dashboard, Screen.SamsungSurvival, Screen.Settings)
 
     val navBackStackEntry by drawerNavController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
@@ -255,6 +256,9 @@ private fun MainNavHost(
         composable(Screen.Dashboard.route) {
             DashboardScreen(viewModel)
         }
+        composable(Screen.SamsungSurvival.route) {
+            SamsungSurvivalScreen()
+        }
         composable(Screen.Settings.route) {
             SettingsScreen()
         }
@@ -269,6 +273,7 @@ private fun MainNavHost(
 @Composable
 private fun Screen.navLabel(): String = when (this) {
     Screen.Dashboard -> stringResource(R.string.nav_dashboard)
+    Screen.SamsungSurvival -> stringResource(R.string.nav_survival)
     Screen.Settings -> stringResource(R.string.nav_settings)
     else -> route
 }

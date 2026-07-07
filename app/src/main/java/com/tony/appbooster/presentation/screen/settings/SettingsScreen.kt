@@ -15,12 +15,16 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
@@ -32,8 +36,10 @@ import com.tony.appbooster.R
 import com.tony.appbooster.domain.model.settings.AppOptimizationType
 import com.tony.appbooster.domain.model.shizuku.ShizukuState
 import com.tony.appbooster.presentation.screen.common.basescreen.AppBaseScreen
+import com.tony.appbooster.presentation.screen.settings.components.HeavyAppPackageSelector
 import com.tony.appbooster.presentation.screen.settings.components.AboutCard
 import com.tony.appbooster.presentation.screen.settings.components.OptimizationTypeSelector
+import com.tony.appbooster.presentation.screen.settings.components.RollbackCandidatesCard
 import com.tony.appbooster.presentation.screen.settings.components.SettingsSection
 import com.tony.appbooster.presentation.screen.settings.components.ShizukuStatusCard
 import com.tony.appbooster.presentation.tools.isTabletLayout
@@ -41,6 +47,8 @@ import com.tony.appbooster.presentation.viewmodel.base.UIState
 import com.tony.appbooster.presentation.viewmodel.base.UIStatus
 import com.tony.appbooster.presentation.viewmodel.settings.SettingsUiState
 import com.tony.appbooster.presentation.viewmodel.settings.SettingsViewModel
+import com.tony.appbooster.presentation.viewmodel.settings.SettingsUiEffect
+import kotlinx.coroutines.flow.collectLatest
 
 /**
  * Entry point composable for the Settings screen. It wires the Hilt-provided
@@ -55,6 +63,15 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val uiState = viewModel.uiState.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(viewModel) {
+        viewModel.uiEffect.collectLatest { effect ->
+            when (effect) {
+                is SettingsUiEffect.ShowSnackbar -> snackbarHostState.showSnackbar(effect.message)
+            }
+        }
+    }
 
     AppBaseScreen(
         uiState = uiState.value
@@ -63,7 +80,12 @@ fun SettingsScreen(
             data = data,
             onOptimizationTypeClick = { newType ->
                 viewModel.onOptimizationTypeSelected(newType)
-            }
+            },
+            onHeavyPackageInputChanged = viewModel::onHeavyAppPackageInputChanged,
+            onAddHeavyPackage = viewModel::onAddHeavyAppPackageClicked,
+            onRemoveHeavyPackage = viewModel::onRemoveHeavyAppPackageClicked,
+            onRollbackPackage = viewModel::onRollbackPackageClicked,
+            snackbarHostState = snackbarHostState
         )
     }
 }
@@ -83,7 +105,12 @@ fun SettingsScreen(
 @Composable
 fun SettingsScreenContent(
     data: SettingsUiState,
-    onOptimizationTypeClick: (AppOptimizationType) -> Unit
+    onOptimizationTypeClick: (AppOptimizationType) -> Unit,
+    onHeavyPackageInputChanged: (String) -> Unit,
+    onAddHeavyPackage: () -> Unit,
+    onRemoveHeavyPackage: (String) -> Unit,
+    onRollbackPackage: (String) -> Unit,
+    snackbarHostState: SnackbarHostState
 ) {
     val isTablet = isTabletLayout()
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior(rememberTopAppBarState())
@@ -107,18 +134,27 @@ fun SettingsScreenContent(
                 )
             )
         },
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.surface
     ) { padding ->
         if (isTablet) {
             SettingsTabletLayout(
                 data = data,
                 onOptimizationTypeClick = onOptimizationTypeClick,
+                onHeavyPackageInputChanged = onHeavyPackageInputChanged,
+                onAddHeavyPackage = onAddHeavyPackage,
+                onRemoveHeavyPackage = onRemoveHeavyPackage,
+                onRollbackPackage = onRollbackPackage,
                 modifier = Modifier.padding(padding)
             )
         } else {
             SettingsPhoneLayout(
                 data = data,
                 onOptimizationTypeClick = onOptimizationTypeClick,
+                onHeavyPackageInputChanged = onHeavyPackageInputChanged,
+                onAddHeavyPackage = onAddHeavyPackage,
+                onRemoveHeavyPackage = onRemoveHeavyPackage,
+                onRollbackPackage = onRollbackPackage,
                 modifier = Modifier.padding(padding)
             )
         }
@@ -132,6 +168,10 @@ fun SettingsScreenContent(
 private fun SettingsPhoneLayout(
     data: SettingsUiState,
     onOptimizationTypeClick: (AppOptimizationType) -> Unit,
+    onHeavyPackageInputChanged: (String) -> Unit,
+    onAddHeavyPackage: () -> Unit,
+    onRemoveHeavyPackage: (String) -> Unit,
+    onRollbackPackage: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -148,6 +188,30 @@ private fun SettingsPhoneLayout(
             OptimizationTypeSelector(
                 selectedType = data.appOptimizationType,
                 onTypeSelected = onOptimizationTypeClick
+            )
+        }
+
+        SettingsSection(
+            title = stringResource(R.string.settings_section_heavy_targets_title),
+            subtitle = stringResource(R.string.settings_section_heavy_targets_subtitle)
+        ) {
+            HeavyAppPackageSelector(
+                packageInput = data.heavyAppPackageInput,
+                selectedPackages = data.heavyAppPackages,
+                onPackageInputChanged = onHeavyPackageInputChanged,
+                onAddPackage = onAddHeavyPackage,
+                onRemovePackage = onRemoveHeavyPackage
+            )
+        }
+
+        SettingsSection(
+            title = stringResource(R.string.settings_section_rollback_title),
+            subtitle = stringResource(R.string.settings_section_rollback_subtitle)
+        ) {
+            RollbackCandidatesCard(
+                candidates = data.rollbackCandidates,
+                rollingBackPackageName = data.rollingBackPackageName,
+                onRollbackPackage = onRollbackPackage
             )
         }
 
@@ -183,6 +247,10 @@ private fun SettingsPhoneLayout(
 private fun SettingsTabletLayout(
     data: SettingsUiState,
     onOptimizationTypeClick: (AppOptimizationType) -> Unit,
+    onHeavyPackageInputChanged: (String) -> Unit,
+    onAddHeavyPackage: () -> Unit,
+    onRemoveHeavyPackage: (String) -> Unit,
+    onRollbackPackage: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -205,6 +273,28 @@ private fun SettingsTabletLayout(
                 OptimizationTypeSelector(
                     selectedType = data.appOptimizationType,
                     onTypeSelected = onOptimizationTypeClick
+                )
+            }
+            SettingsSection(
+                title = stringResource(R.string.settings_section_heavy_targets_title),
+                subtitle = stringResource(R.string.settings_section_heavy_targets_subtitle)
+            ) {
+                HeavyAppPackageSelector(
+                    packageInput = data.heavyAppPackageInput,
+                    selectedPackages = data.heavyAppPackages,
+                    onPackageInputChanged = onHeavyPackageInputChanged,
+                    onAddPackage = onAddHeavyPackage,
+                    onRemovePackage = onRemoveHeavyPackage
+                )
+            }
+            SettingsSection(
+                title = stringResource(R.string.settings_section_rollback_title),
+                subtitle = stringResource(R.string.settings_section_rollback_subtitle)
+            ) {
+                RollbackCandidatesCard(
+                    candidates = data.rollbackCandidates,
+                    rollingBackPackageName = data.rollingBackPackageName,
+                    onRollbackPackage = onRollbackPackage
                 )
             }
             Spacer(Modifier.height(8.dp))
@@ -267,7 +357,12 @@ fun SettingsScreenContentLightPreview() {
     AppBaseScreen(uiState = baseState) { data ->
         SettingsScreenContent(
             data = data,
-            onOptimizationTypeClick = {}
+            onOptimizationTypeClick = {},
+            onHeavyPackageInputChanged = {},
+            onAddHeavyPackage = {},
+            onRemoveHeavyPackage = {},
+            onRollbackPackage = {},
+            snackbarHostState = remember { SnackbarHostState() }
         )
     }
 }
@@ -295,7 +390,12 @@ fun SettingsScreenContentDarkPreview() {
     AppBaseScreen(uiState = baseState) { data ->
         SettingsScreenContent(
             data = data,
-            onOptimizationTypeClick = {}
+            onOptimizationTypeClick = {},
+            onHeavyPackageInputChanged = {},
+            onAddHeavyPackage = {},
+            onRemoveHeavyPackage = {},
+            onRollbackPackage = {},
+            snackbarHostState = remember { SnackbarHostState() }
         )
     }
 }

@@ -7,5 +7,7 @@ package com.tony.appbooster.presentation.viewmodel.settings
  * such as showing a snackbar or triggering navigation. Currently unused but
  * reserved for future Settings effects.
  */
-sealed interface SettingsUiEffect
+sealed interface SettingsUiEffect {
+    data class ShowSnackbar(val message: String) : SettingsUiEffect
+}
 

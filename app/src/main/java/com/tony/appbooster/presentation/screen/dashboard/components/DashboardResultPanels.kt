@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DoNotDisturbOn
+import androidx.compose.material.icons.rounded.Error
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.RocketLaunch
 import androidx.compose.material.icons.rounded.Speed
@@ -206,6 +207,8 @@ fun HeroResultPanel(
         val showStats = when (status) {
             is HeroCardStatus.Completed -> status.processedCount > 0 || status.skippedCount > 0
             is HeroCardStatus.Canceled -> status.processedCount > 0 || status.skippedCount > 0
+            is HeroCardStatus.Failed -> status.processedCount > 0 || status.skippedCount > 0 || status.totalCount > 0
+            is HeroCardStatus.Paused -> status.processedCount > 0 || status.skippedCount > 0 || status.totalCount > 0
             is HeroCardStatus.AllOptimized -> false
         }
 
@@ -222,6 +225,20 @@ fun HeroResultPanel(
                 OptimizationStatsRow(
                     needsOptimizationCount = (status.totalCount - (status.processedCount + status.skippedCount))
                         .coerceAtLeast(0),
+                    optimizedCount = status.processedCount + (status.skippedCount - status.noProfileCount).coerceAtLeast(0),
+                    noProfileCount = status.noProfileCount,
+                    showNoProfile = isSpeedProfile
+                )
+            } else if (status is HeroCardStatus.Failed) {
+                OptimizationStatsRow(
+                    needsOptimizationCount = (status.totalCount - status.processedCount).coerceAtLeast(0),
+                    optimizedCount = status.processedCount + (status.skippedCount - status.noProfileCount).coerceAtLeast(0),
+                    noProfileCount = status.noProfileCount,
+                    showNoProfile = isSpeedProfile
+                )
+            } else if (status is HeroCardStatus.Paused) {
+                OptimizationStatsRow(
+                    needsOptimizationCount = (status.totalCount - status.processedCount).coerceAtLeast(0),
                     optimizedCount = status.processedCount + (status.skippedCount - status.noProfileCount).coerceAtLeast(0),
                     noProfileCount = status.noProfileCount,
                     showNoProfile = isSpeedProfile
@@ -372,6 +389,34 @@ private fun rememberHeroResultConfig(status: HeroCardStatus): HeroResultConfig {
             showGlow = false,
             showRunAgain = true
         )
+        is HeroCardStatus.Failed -> HeroResultConfig(
+            icon = Icons.Rounded.Error,
+            containerColor = colorScheme.errorContainer,
+            iconTint = colorScheme.onErrorContainer,
+            glowColor = Color.Transparent,
+            title = stringResource(R.string.dashboard_result_failed_title),
+            subtitle = stringResource(
+                R.string.dashboard_result_failed_count,
+                status.processedCount,
+                status.totalCount
+            ),
+            iconScaleTarget = 1.04f,
+            pulseMs = 900,
+            showGlow = false,
+            showRunAgain = true
+        )
+        is HeroCardStatus.Paused -> HeroResultConfig(
+            icon = Icons.Rounded.DoNotDisturbOn,
+            containerColor = colorScheme.tertiaryContainer,
+            iconTint = colorScheme.onTertiaryContainer,
+            glowColor = Color.Transparent,
+            title = stringResource(R.string.dashboard_result_paused_title),
+            subtitle = status.reason,
+            iconScaleTarget = 1.04f,
+            pulseMs = 900,
+            showGlow = false,
+            showRunAgain = true
+        )
         is HeroCardStatus.AllOptimized -> HeroResultConfig(
             icon = Icons.Rounded.CheckCircle,
             containerColor = colorScheme.primaryContainer,
@@ -412,6 +457,39 @@ private fun HeroResultPanelCanceledPreview() {
     AppBoosterTheme {
         HeroResultPanel(
             status = HeroCardStatus.Canceled(processedCount = 7, skippedCount = 2, totalCount = 22),
+            onDismiss = {},
+            onRunAgain = {},
+            onForceOptimize = {}
+        )
+    }
+}
+
+@Preview(name = "Failed - Light", showBackground = true)
+@Preview(name = "Failed - Dark", uiMode = Configuration.UI_MODE_NIGHT_YES, showBackground = true)
+@Composable
+private fun HeroResultPanelFailedPreview() {
+    AppBoosterTheme {
+        HeroResultPanel(
+            status = HeroCardStatus.Failed(processedCount = 7, skippedCount = 2, totalCount = 22),
+            onDismiss = {},
+            onRunAgain = {},
+            onForceOptimize = {}
+        )
+    }
+}
+
+@Preview(name = "Paused - Light", showBackground = true)
+@Preview(name = "Paused - Dark", uiMode = Configuration.UI_MODE_NIGHT_YES, showBackground = true)
+@Composable
+private fun HeroResultPanelPausedPreview() {
+    AppBoosterTheme {
+        HeroResultPanel(
+            status = HeroCardStatus.Paused(
+                reason = "Battery is 20%, below the 35% guard",
+                processedCount = 0,
+                skippedCount = 0,
+                totalCount = 22
+            ),
             onDismiss = {},
             onRunAgain = {},
             onForceOptimize = {}

@@ -2,7 +2,9 @@ package com.tony.appbooster.di.usecase
 
 import com.tony.appbooster.domain.repository.SettingsRepository
 import com.tony.appbooster.domain.usecase.settings.ObserveAppOptimizationTypeUseCase
+import com.tony.appbooster.domain.usecase.settings.ObserveHeavyAppPackagesUseCase
 import com.tony.appbooster.domain.usecase.settings.SetAppOptimizationTypeUseCase
+import com.tony.appbooster.domain.usecase.settings.SetHeavyAppPackagesUseCase
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -21,7 +23,17 @@ object SettingsUseCaseModule {
 
     @Provides
     @Singleton
+    fun provideObserveHeavyAppPackagesUseCase(settingsRepository: SettingsRepository): ObserveHeavyAppPackagesUseCase =
+        ObserveHeavyAppPackagesUseCase(settingsRepository)
+
+    @Provides
+    @Singleton
     fun provideSetAppOptimizationTypeUseCase(settingsRepository: SettingsRepository): SetAppOptimizationTypeUseCase =
         SetAppOptimizationTypeUseCase(settingsRepository)
+
+    @Provides
+    @Singleton
+    fun provideSetHeavyAppPackagesUseCase(settingsRepository: SettingsRepository): SetHeavyAppPackagesUseCase =
+        SetHeavyAppPackagesUseCase(settingsRepository)
 }
 

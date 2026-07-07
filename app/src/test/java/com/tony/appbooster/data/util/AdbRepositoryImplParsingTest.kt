@@ -1,5 +1,7 @@
 package com.tony.appbooster.data.util
 
+import com.tony.appbooster.domain.client.AdbShellDataSource
+import io.mockk.mockk
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -116,6 +118,27 @@ class AdbRepositoryImplParsingTest {
         """.trimIndent()
 
         assertFalse(PackageClassifier.isOverlayLike(packageName = pkg, dumpsysPackageOutput = dump))
+    }
+
+    @Test
+    fun `given dumpsys package entries when parsePackageLines then returns package names`() {
+        val output = """
+            Packages:
+              Package [com.example.one] (abc):
+                userId=10001
+              Package [com.example.two] (def):
+                userId=10002
+        """.trimIndent()
+
+        val service = PackageListQueryService(
+            shellDataSource = mockk<AdbShellDataSource>(),
+            logger = OptimizationLogger()
+        )
+
+        assertEquals(
+            listOf("com.example.one", "com.example.two"),
+            service.parsePackageLines(output)
+        )
     }
 }
 

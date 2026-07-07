@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.tony.appbooster.domain.model.common.Resource
 import com.tony.appbooster.domain.model.common.ResourceError
@@ -12,6 +13,7 @@ import com.tony.appbooster.domain.repository.SettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -40,6 +42,8 @@ class SettingsDataStoreRepository @Inject constructor(
     private object Keys {
         val APP_OPTIMIZATION_TYPE: Preferences.Key<String> =
             stringPreferencesKey("app_optimization_type")
+        val HEAVY_APP_PACKAGES: Preferences.Key<Set<String>> =
+            stringSetPreferencesKey("heavy_app_packages")
     }
 
     override fun observeAppOptimizationType(): Flow<Resource<AppOptimizationType>> {
@@ -67,6 +71,41 @@ class SettingsDataStoreRepository @Inject constructor(
             }
     }
 
+    override fun observeHeavyAppPackages(): Flow<Resource<Set<String>>> {
+        return applicationContext.settingsDataStore
+            .data
+            .map { preferences ->
+                val packages = preferences[Keys.HEAVY_APP_PACKAGES].orEmpty()
+                Resource.Success(packages) as Resource<Set<String>>
+            }
+            .catch { throwable ->
+                emit(
+                    Resource.Error(
+                        ResourceError.DatabaseError(
+                            message = throwable.message ?: "Unable to read heavy app packages"
+                        )
+                    )
+                )
+            }
+    }
+
+    override suspend fun getHeavyAppPackages(): Resource<Set<String>> {
+        return try {
+            Resource.Success(
+                applicationContext.settingsDataStore
+                    .data
+                    .map { preferences -> preferences[Keys.HEAVY_APP_PACKAGES].orEmpty() }
+                    .first()
+            )
+        } catch (throwable: Throwable) {
+            Resource.Error(
+                ResourceError.DatabaseError(
+                    message = throwable.message ?: "Unable to read heavy app packages"
+                )
+            )
+        }
+    }
+
     override suspend fun setAppOptimizationType(
         type: AppOptimizationType
     ): Resource<Unit> {
@@ -79,6 +118,23 @@ class SettingsDataStoreRepository @Inject constructor(
             Resource.Error(
                 ResourceError.DatabaseError(
                     message = throwable.message ?: "Unable to persist optimization type"
+                )
+            )
+        }
+    }
+
+    override suspend fun setHeavyAppPackages(
+        packageNames: Set<String>
+    ): Resource<Unit> {
+        return try {
+            applicationContext.settingsDataStore.edit { preferences ->
+                preferences[Keys.HEAVY_APP_PACKAGES] = packageNames
+            }
+            Resource.Success(Unit)
+        } catch (throwable: Throwable) {
+            Resource.Error(
+                ResourceError.DatabaseError(
+                    message = throwable.message ?: "Unable to persist heavy app packages"
                 )
             )
         }

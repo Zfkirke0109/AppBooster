@@ -9,10 +9,10 @@ interface IShellService {
     /**
      * Executes a shell command and returns the result.
      *
-     * @param command The shell command to execute.
+     * @param commandArgs Validated command argv to execute.
      * @return Array containing [exitCode, stdout, stderr]
      */
-    String[] executeCommand(String command);
+    String[] executeCommand(in String[] commandArgs);
 
     /**
      * Destroys the service and releases resources.

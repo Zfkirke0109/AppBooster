@@ -4,6 +4,8 @@ package com.tony.appbooster.data.repository
 import com.tony.appbooster.domain.client.AdbShellClient
 import com.tony.appbooster.domain.client.AdbShellDataSource
 import com.tony.appbooster.domain.model.common.ShellCommandResult
+import com.tony.appbooster.domain.model.common.ShellCommandSpec
+import com.tony.appbooster.domain.model.common.requireSuccess
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import javax.inject.Inject
@@ -30,9 +32,12 @@ class AdbShellDataSourceImpl @Inject constructor(
      * @return [Result] with full output or failure if the client fails.
      */
     override suspend fun executeCommand(
-        command: String
+        command: ShellCommandSpec
     ): Result<String> = runCatching {
-        adbClient.execute(command)
+        executeCommandDetailed(command)
+            .getOrThrow()
+            .requireSuccess(command.displayCommand)
+            .stdout
     }
 
     /**
@@ -43,7 +48,7 @@ class AdbShellDataSourceImpl @Inject constructor(
      * or an error when the ADB transport fails mid-stream.
      */
     override suspend fun streamCommand(
-        command: String
+        command: ShellCommandSpec
     ): Flow<Result<String>> = flow {
         adbClient.stream(command).collect { lineResult ->
             emit(lineResult)
@@ -59,7 +64,7 @@ class AdbShellDataSourceImpl @Inject constructor(
      * or failure if the client fails.
      */
     override suspend fun executeCommandDetailed(
-        command: String
+        command: ShellCommandSpec
     ): Result<ShellCommandResult> = runCatching {
         adbClient.executeDetailed(command)
     }

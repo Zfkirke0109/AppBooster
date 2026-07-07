@@ -1,6 +1,7 @@
 package com.tony.appbooster.domain.client
 
 import com.tony.appbooster.domain.model.common.ShellCommandResult
+import com.tony.appbooster.domain.model.common.ShellCommandSpec
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -34,19 +35,19 @@ interface AdbShellClient {
     /**
      * Executes a single shell command and waits for the result.
      *
-     * @param command The shell command (e.g., "pm list packages").
+     * @param command The validated shell command spec.
      * @return The full standard output as a String.
      * @throws IllegalStateException if not connected.
      */
-    suspend fun execute(command: String): String
+    suspend fun execute(command: ShellCommandSpec): String
 
     /**
      * Streams the output of a long-running command line-by-line.
      *
-     * @param command The shell command to execute.
+     * @param command The validated shell command spec to execute.
      * @return A Flow emitting lines of output or a Result failure.
      */
-    fun stream(command: String): Flow<Result<String>>
+    fun stream(command: ShellCommandSpec): Flow<Result<String>>
 
     /**
      * Executes a single shell command and returns detailed process information.
@@ -58,9 +59,9 @@ interface AdbShellClient {
      * Implementations should return a non-zero [ShellCommandResult.exitCode] when the
      * command fails.
      *
-     * @param command The shell command to execute.
+     * @param command The validated shell command spec to execute.
      * @return Detailed result including exit code, stdout, and stderr.
      * @throws IllegalStateException if not connected.
      */
-    suspend fun executeDetailed(command: String): ShellCommandResult
+    suspend fun executeDetailed(command: ShellCommandSpec): ShellCommandResult
 }

@@ -3,10 +3,16 @@ package com.tony.appbooster.presentation.viewmodel.settings
 import androidx.lifecycle.viewModelScope
 import com.tony.appbooster.presentation.navigation.interfaces.NavigationManager
 import com.tony.appbooster.domain.model.common.Resource
+import com.tony.appbooster.domain.model.common.ResourceError
+import com.tony.appbooster.domain.model.common.PackageNameValidator
 import com.tony.appbooster.domain.model.settings.AppOptimizationType
 import com.tony.appbooster.domain.usecase.appinfo.GetAppInfoUseCase
+import com.tony.appbooster.domain.usecase.optimization.ObserveRollbackCandidatesUseCase
+import com.tony.appbooster.domain.usecase.optimization.RollbackOptimizationUseCase
 import com.tony.appbooster.domain.usecase.settings.ObserveAppOptimizationTypeUseCase
+import com.tony.appbooster.domain.usecase.settings.ObserveHeavyAppPackagesUseCase
 import com.tony.appbooster.domain.usecase.settings.SetAppOptimizationTypeUseCase
+import com.tony.appbooster.domain.usecase.settings.SetHeavyAppPackagesUseCase
 import com.tony.appbooster.domain.usecase.shizuku.ObserveShizukuStateUseCase
 import com.tony.appbooster.presentation.screen.settings.model.AppInfo
 import com.tony.appbooster.presentation.viewmodel.base.BaseViewModel
@@ -32,15 +38,21 @@ import javax.inject.Inject
 class SettingsViewModel @Inject constructor(
     navigationManager: NavigationManager,
     private val observeAppOptimizationTypeUseCase: ObserveAppOptimizationTypeUseCase,
+    private val observeHeavyAppPackagesUseCase: ObserveHeavyAppPackagesUseCase,
     private val setAppOptimizationTypeUseCase: SetAppOptimizationTypeUseCase,
+    private val setHeavyAppPackagesUseCase: SetHeavyAppPackagesUseCase,
     private val getAppInfoUseCase: GetAppInfoUseCase,
-    private val observeShizukuStateUseCase: ObserveShizukuStateUseCase
+    private val observeShizukuStateUseCase: ObserveShizukuStateUseCase,
+    private val observeRollbackCandidatesUseCase: ObserveRollbackCandidatesUseCase,
+    private val rollbackOptimizationUseCase: RollbackOptimizationUseCase
 ) : BaseViewModel<SettingsUiState, SettingsUiEvent, SettingsUiEffect>(navigationManager) {
 
     override val LOG_TAG: String = "SettingsViewModel"
 
     init {
         observeOptimizationType()
+        observeHeavyAppPackages()
+        observeRollbackCandidates()
         observeShizukuState()
         loadAppInfo()
     }
@@ -68,6 +80,37 @@ class SettingsViewModel @Inject constructor(
                             handleError(resource)
                         }
                     }
+                }
+        }
+    }
+
+    private fun observeHeavyAppPackages() {
+        viewModelScope.launch(exceptionHandler) {
+            observeHeavyAppPackagesUseCase()
+                .collectLatest { resource ->
+                    when (resource) {
+                        is Resource.Success -> {
+                            updateUiData(
+                                currentUiData().copy(
+                                    heavyAppPackages = resource.data
+                                )
+                            )
+                        }
+                        is Resource.Error -> handleError(resource)
+                    }
+                }
+        }
+    }
+
+    private fun observeRollbackCandidates() {
+        viewModelScope.launch(exceptionHandler) {
+            observeRollbackCandidatesUseCase()
+                .collectLatest { candidates ->
+                    updateUiData(
+                        currentUiData().copy(
+                            rollbackCandidates = candidates
+                        )
+                    )
                 }
         }
     }
@@ -120,6 +163,13 @@ class SettingsViewModel @Inject constructor(
     override fun handleEvent(event: SettingsUiEvent) {
         when (event) {
             is SettingsUiEvent.OnOptimizationTypeSelected -> persistOptimizationType(event.type)
+            is SettingsUiEvent.OnHeavyAppPackageInputChanged -> updateUiData(
+                currentUiData().copy(heavyAppPackageInput = event.packageName)
+            )
+            SettingsUiEvent.OnAddHeavyAppPackageClicked -> addHeavyAppPackage()
+            is SettingsUiEvent.OnRemoveHeavyAppPackageClicked ->
+                persistHeavyAppPackages(currentUiData().heavyAppPackages - event.packageName)
+            is SettingsUiEvent.OnRollbackPackageClicked -> rollbackPackage(event.packageName)
         }
     }
 
@@ -130,6 +180,22 @@ class SettingsViewModel @Inject constructor(
      */
     fun onOptimizationTypeSelected(type: AppOptimizationType) {
         onEvent(SettingsUiEvent.OnOptimizationTypeSelected(type))
+    }
+
+    fun onHeavyAppPackageInputChanged(packageName: String) {
+        onEvent(SettingsUiEvent.OnHeavyAppPackageInputChanged(packageName))
+    }
+
+    fun onAddHeavyAppPackageClicked() {
+        onEvent(SettingsUiEvent.OnAddHeavyAppPackageClicked)
+    }
+
+    fun onRemoveHeavyAppPackageClicked(packageName: String) {
+        onEvent(SettingsUiEvent.OnRemoveHeavyAppPackageClicked(packageName))
+    }
+
+    fun onRollbackPackageClicked(packageName: String) {
+        onEvent(SettingsUiEvent.OnRollbackPackageClicked(packageName))
     }
 
     private fun persistOptimizationType(type: AppOptimizationType) {
@@ -148,6 +214,66 @@ class SettingsViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    private fun addHeavyAppPackage() {
+        val state = currentUiData()
+        val packageName = state.heavyAppPackageInput.trim()
+        if (!PackageNameValidator.isValid(packageName)) {
+            emitEffect(SettingsUiEffect.ShowSnackbar("Enter a valid package name"))
+            return
+        }
+
+        persistHeavyAppPackages(
+            packageNames = state.heavyAppPackages + packageName,
+            clearInput = true
+        )
+    }
+
+    private fun persistHeavyAppPackages(
+        packageNames: Set<String>,
+        clearInput: Boolean = false
+    ) {
+        executeAsync {
+            when (val result = setHeavyAppPackagesUseCase(packageNames)) {
+                is Resource.Success -> {
+                    updateUiData(
+                        currentUiData().copy(
+                            heavyAppPackages = packageNames,
+                            heavyAppPackageInput = if (clearInput) "" else currentUiData().heavyAppPackageInput
+                        )
+                    )
+                }
+                is Resource.Error -> handleError(result)
+            }
+        }
+    }
+
+    private fun rollbackPackage(packageName: String) {
+        executeAsync {
+            updateUiData(currentUiData().copy(rollingBackPackageName = packageName))
+            when (val result = rollbackOptimizationUseCase(packageName)) {
+                is Resource.Success -> {
+                    updateUiData(currentUiData().copy(rollingBackPackageName = null))
+                    emitEffect(SettingsUiEffect.ShowSnackbar("Rollback reset complete"))
+                }
+                is Resource.Error -> {
+                    updateUiData(currentUiData().copy(rollingBackPackageName = null))
+                    emitEffect(SettingsUiEffect.ShowSnackbar(result.data.toMessage()))
+                    handleError(result)
+                }
+            }
+        }
+    }
+
+    private fun ResourceError.toMessage(): String {
+        return when (this) {
+            is ResourceError.LogicError -> errorMessage
+            is ResourceError.NetworkError -> errorMessage
+            is ResourceError.DatabaseError -> message
+            ResourceError.SSLError -> "Security error"
+            ResourceError.UnknownError -> null
+        } ?: "Operation failed"
     }
 
     /**

@@ -9,7 +9,9 @@ import com.tony.appbooster.domain.usecase.optimization.DismissOptimizationResult
 import com.tony.appbooster.domain.usecase.optimization.ObserveCommandOutputUseCase
 import com.tony.appbooster.domain.usecase.optimization.ObserveOptimizationLogEntriesUseCase
 import com.tony.appbooster.domain.usecase.optimization.ObserveOptimizationProgressUseCase
+import com.tony.appbooster.domain.usecase.optimization.ObserveRollbackCandidatesUseCase
 import com.tony.appbooster.domain.usecase.optimization.OptimizeAppUseCase
+import com.tony.appbooster.domain.usecase.optimization.RollbackOptimizationUseCase
 import com.tony.appbooster.domain.usecase.optimization.StartOptimizationUseCase
 import com.tony.appbooster.domain.usecase.optimization.StartOptimizationWorkUseCase
 import com.tony.appbooster.domain.usecase.optimization.StopOptimizationUseCase
@@ -56,8 +58,18 @@ object OptimizationUseCaseModule {
 
     @Provides
     @Singleton
+    fun provideObserveRollbackCandidatesUseCase(adbRepository: AdbRepository): ObserveRollbackCandidatesUseCase =
+        ObserveRollbackCandidatesUseCase(adbRepository)
+
+    @Provides
+    @Singleton
     fun provideOptimizeAppUseCase(adbRepository: AdbRepository): OptimizeAppUseCase =
         OptimizeAppUseCase(adbRepository)
+
+    @Provides
+    @Singleton
+    fun provideRollbackOptimizationUseCase(adbRepository: AdbRepository): RollbackOptimizationUseCase =
+        RollbackOptimizationUseCase(adbRepository)
 
     @Provides
     @Singleton

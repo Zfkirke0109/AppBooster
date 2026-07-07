@@ -26,6 +26,9 @@
     <string name="action_force_optimize">Forza ri-ottimizzazione totale</string>
     <string name="action_force_optimize_short">Ri-ottimizza tutto</string>
     <string name="action_dismiss">Chiudi</string>
+    <string name="action_add">Aggiungi</string>
+    <string name="action_remove">Rimuovi</string>
+    <string name="action_reset">Reset</string>
 
     <string name="notification_permission_rationale_title">Abilitare le notifiche?</string>
     <string name="notification_permission_rationale_message">OptiDroid usa una notifica in primo piano per mantenere l’ottimizzazione in esecuzione in background e mostrare un pulsante di interruzione.\n\nPubblicheremo notifiche solo mentre l’ottimizzazione è in corso.</string>
@@ -40,8 +43,11 @@
     <string name="dashboard_stop_description">Annulla dopo il completamento dell’app corrente</string>
     <string name="dashboard_result_completed_title">Ottimizzazione completata</string>
     <string name="dashboard_result_canceled_title">Ottimizzazione annullata</string>
+    <string name="dashboard_result_failed_title">Ottimizzazione fallita</string>
+    <string name="dashboard_result_paused_title">Ottimizzazione in pausa</string>
     <string name="dashboard_result_completed_count">%1$d di %2$d app ottimizzate</string>
     <string name="dashboard_result_canceled_count">%1$d di %2$d app ottimizzate prima dell’interruzione</string>
+    <string name="dashboard_result_failed_count">%1$d di %2$d app ottimizzate prima dell’errore</string>
     <string name="dashboard_terminal_section_title">Output terminale</string>
     <string name="dashboard_terminal_empty_title">Nessun output</string>
     <string name="dashboard_terminal_empty_subtitle">Avvia l’ottimizzazione per vedere l’output del terminale</string>
@@ -86,17 +92,26 @@
     <string name="shizuku_ready_redirecting">Reindirizzamento...</string>
 
     <string name="settings_top_bar_title">Impostazioni</string>
-    <string name="settings_section_optimization_title">Modalità di ottimizzazione</string>
-    <string name="settings_section_optimization_subtitle">Scegli come ottimizzare le app</string>
+    <string name="settings_section_optimization_title">Profilo di ottimizzazione</string>
+    <string name="settings_section_optimization_subtitle">Scegli compilazione bilanciata o velocità mirata per app pesanti</string>
+    <string name="settings_section_heavy_targets_title">Target Gaming / app pesanti</string>
+    <string name="settings_section_heavy_targets_subtitle">Solo questi pacchetti usano la compilazione speed completa</string>
+    <string name="settings_section_rollback_title">Rollback</string>
+    <string name="settings_section_rollback_subtitle">Reimposta app ottimizzate che hanno problemi dopo la compilazione</string>
     <string name="settings_section_shizuku_title">Stato Shizuku</string>
     <string name="settings_section_shizuku_subtitle">Servizio per l’esecuzione di comandi con privilegi</string>
     <string name="settings_section_about_title">Informazioni</string>
     <string name="settings_section_about_subtitle">Dettagli dell’app</string>
 
-    <string name="settings_opt_speed_title">Speed Profile</string>
-    <string name="settings_opt_speed_description">Ottimizza in base ai pattern d’uso. Installazione più rapida, prestazioni bilanciate.</string>
-    <string name="settings_opt_full_title">Ottimizzazione completa</string>
-    <string name="settings_opt_full_description">Massime prestazioni. Compilazione più lunga, migliore velocità in esecuzione.</string>
+    <string name="settings_opt_speed_title">Bilanciato quotidiano</string>
+    <string name="settings_opt_speed_description">Usa speed-profile per affidabilità quotidiana, meno calore e uso ragionevole dello spazio.</string>
+    <string name="settings_opt_full_title">Gaming / app pesanti</string>
+    <string name="settings_opt_full_description">Usa la compilazione speed completa solo per giochi, fotocamera, browser o altre app pesanti selezionate.</string>
+    <string name="settings_heavy_package_label">Nome pacchetto</string>
+    <string name="settings_heavy_package_hint">Esempi: com.sec.android.app.camera, com.android.chrome</string>
+    <string name="settings_heavy_empty">Nessuna app pesante selezionata. La modalità Gaming / app pesanti resta in pausa finché non aggiungi almeno un pacchetto.</string>
+    <string name="settings_rollback_empty">Nessun candidato rollback. Le app ottimizzate correttamente appariranno qui.</string>
+    <string name="settings_rollback_filter_summary">Prima: %1$s, ottimizzato: %2$s</string>
 
     <string name="settings_optimization_mode_cd">Modalità di ottimizzazione: %1$s</string>
     <string name="settings_selected_cd">Selezionato</string>
@@ -131,10 +146,10 @@
     <string name="error_database_title">Errore database</string>
     <string name="error_select_optimization_mode_first">Seleziona prima una modalità di ottimizzazione</string>
 
-    <string name="dashboard_ready_speed_profile_title">Speed Profile</string>
-    <string name="dashboard_ready_speed_profile_description">Ottimizza le app in base ai pattern d’uso</string>
-    <string name="dashboard_ready_full_optimization_title">Ottimizzazione completa</string>
-    <string name="dashboard_ready_full_optimization_description">Compilazione per prestazioni massime</string>
+    <string name="dashboard_ready_speed_profile_title">Bilanciato quotidiano</string>
+    <string name="dashboard_ready_speed_profile_description">Ottimizza le app in base ai pattern d\'uso</string>
+    <string name="dashboard_ready_full_optimization_title">Gaming / app pesanti</string>
+    <string name="dashboard_ready_full_optimization_description">Compilazione speed completa solo per app selezionate</string>
 
     <string name="about_app_title">OptiDroid</string>
     <string name="about_version_fallback">1.0.0</string>
@@ -149,7 +164,27 @@
     <string name="base_dialog_preview_cancel">Annulla</string>
 
     <string name="nav_dashboard">Dashboard</string>
+    <string name="nav_survival">Sopravvivenza</string>
     <string name="nav_settings">Impostazioni</string>
+
+    <!-- Samsung Survival Wizard -->
+    <string name="survival_title">Sopravvivenza Samsung</string>
+    <string name="survival_ready_title">Pronto per sessioni lunghe</string>
+    <string name="survival_attention_title">Richiede attenzione</string>
+    <string name="survival_hero_subtitle">Controlla batteria, stato termico e restrizioni standby di One UI prima di compilare le app.</string>
+    <string name="survival_refresh">Aggiorna</string>
+    <string name="survival_open_battery_settings">Impostazioni batteria</string>
+    <string name="survival_open_settings_failed">Impossibile aprire le impostazioni app</string>
+    <string name="survival_error_title">Controllo stato fallito</string>
+    <string name="survival_value_unknown">Sconosciuto</string>
+    <string name="survival_battery_title">Protezione batteria</string>
+    <string name="survival_battery_description">L\'ottimizzazione va in pausa sotto il 35%% di batteria per ridurre calore e rischio di spegnimento.</string>
+    <string name="survival_thermal_title">Protezione termica</string>
+    <string name="survival_thermal_description">L\'ottimizzazione va in pausa quando dumpsys thermalservice segnala severe o superiore.</string>
+    <string name="survival_standby_title">Bucket standby</string>
+    <string name="survival_standby_description">Verificato con am get-standby-bucket per rendere visibili restrizioni di Good Guardians o One UI.</string>
+    <string name="survival_unrestricted_title">Imposta batteria su Senza restrizioni</string>
+    <string name="survival_unrestricted_description">Apri impostazioni, scegli Batteria, quindi imposta OptiDroid su Senza restrizioni. Aggiorna qui dopo la modifica.</string>
 
     <!-- Analisi ottimizzazione -->
     <string name="analysis_scanning_title">Analisi app</string>

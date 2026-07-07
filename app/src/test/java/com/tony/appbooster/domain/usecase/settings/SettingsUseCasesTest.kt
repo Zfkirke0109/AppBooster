@@ -86,5 +86,33 @@ class SettingsUseCasesTest {
         assertTrue(result is Resource.Error)
         assertEquals(error, (result as Resource.Error).data)
     }
+
+    // ── Heavy app package use cases ───────────────────────────────────────────
+
+    @Test
+    fun `given repository emits heavy packages when ObserveHeavyAppPackagesUseCase invoke then emits same`() = runTest {
+        val packages = setOf("com.example.game", "com.example.camera")
+        every { repository.observeHeavyAppPackages() } returns flowOf(Resource.Success(packages))
+
+        val useCase = ObserveHeavyAppPackagesUseCase(repository)
+        val emissions = useCase().toList()
+
+        assertEquals(1, emissions.size)
+        assertTrue(emissions[0] is Resource.Success)
+        assertEquals(packages, (emissions[0] as Resource.Success).data)
+        verify(exactly = 1) { repository.observeHeavyAppPackages() }
+    }
+
+    @Test
+    fun `given package set when SetHeavyAppPackagesUseCase invoke then delegates to repository`() = runTest {
+        val packages = setOf("com.example.game")
+        coEvery { repository.setHeavyAppPackages(packages) } returns Resource.Success(Unit)
+
+        val useCase = SetHeavyAppPackagesUseCase(repository)
+        val result = useCase(packages)
+
+        assertTrue(result is Resource.Success)
+        coVerify(exactly = 1) { repository.setHeavyAppPackages(packages) }
+    }
 }
 

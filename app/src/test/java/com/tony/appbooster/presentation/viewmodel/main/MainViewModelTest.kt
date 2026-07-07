@@ -286,6 +286,46 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `given failed run when OnDismissOptimizationResultClicked then current result is marked dismissed`() = runTest {
+        val runId = 43L
+        progressFlow.value = OptimizationProgress(
+            runId = runId,
+            isRunning = false,
+            result = OptimizationResult.Failed
+        )
+        coEvery { dismissOptimizationResultUseCase() } returns Resource.Success(Unit)
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        vm.onEvent(MainUiEvent.OnDismissOptimizationResultClicked)
+        advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.data?.isCurrentResultDismissed == true)
+        coVerify(exactly = 1) { dismissOptimizationResultUseCase() }
+    }
+
+    @Test
+    fun `given paused run when OnDismissOptimizationResultClicked then current result is marked dismissed`() = runTest {
+        val runId = 44L
+        progressFlow.value = OptimizationProgress(
+            runId = runId,
+            isRunning = false,
+            result = OptimizationResult.Paused("Battery is low")
+        )
+        coEvery { dismissOptimizationResultUseCase() } returns Resource.Success(Unit)
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        vm.onEvent(MainUiEvent.OnDismissOptimizationResultClicked)
+        advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.data?.isCurrentResultDismissed == true)
+        coVerify(exactly = 1) { dismissOptimizationResultUseCase() }
+    }
+
+    @Test
     fun `given runId is zero when OnDismissOptimizationResultClicked then does not call dismissUseCase`() = runTest {
         progressFlow.value = OptimizationProgress(runId = 0L)
         val vm = createViewModel()

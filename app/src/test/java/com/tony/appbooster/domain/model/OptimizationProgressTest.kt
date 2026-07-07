@@ -47,5 +47,18 @@ class OptimizationProgressTest {
         val result: OptimizationResult = OptimizationResult.Canceled
         assertTrue(result is OptimizationResult.Canceled)
     }
+
+    @Test
+    fun `given Failed result then is Failed`() {
+        val result: OptimizationResult = OptimizationResult.Failed
+        assertTrue(result is OptimizationResult.Failed)
+    }
+
+    @Test
+    fun `given Paused result then carries reason`() {
+        val result: OptimizationResult = OptimizationResult.Paused("Battery is low")
+        assertTrue(result is OptimizationResult.Paused)
+        assertEquals("Battery is low", (result as OptimizationResult.Paused).reason)
+    }
 }
 

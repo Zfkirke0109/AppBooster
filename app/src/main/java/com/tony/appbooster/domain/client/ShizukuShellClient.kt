@@ -1,5 +1,6 @@
 package com.tony.appbooster.domain.client
 
+import com.tony.appbooster.domain.model.common.ShellCommandSpec
 import com.tony.appbooster.domain.model.shizuku.ShellResult
 import com.tony.appbooster.domain.model.shizuku.ShizukuState
 import kotlinx.coroutines.flow.Flow
@@ -43,19 +44,19 @@ interface ShizukuShellClient {
     /**
      * Executes a shell command with Shizuku privileges.
      *
-     * @param command The shell command to execute.
+     * @param command The validated shell command spec to execute.
      * @return [ShellResult] containing exit code, stdout, and stderr.
      * @throws IllegalStateException if Shizuku is not ready.
      */
-    suspend fun execute(command: String): ShellResult
+    suspend fun execute(command: ShellCommandSpec): ShellResult
 
     /**
      * Executes a shell command and streams output line by line.
      *
-     * @param command The shell command to execute.
+     * @param command The validated shell command spec to execute.
      * @return Flow emitting each line of output as it becomes available.
      */
-    fun executeStreaming(command: String): Flow<Result<String>>
+    fun executeStreaming(command: ShellCommandSpec): Flow<Result<String>>
 
     /**
      * Opens the Shizuku app in Play Store or official download page.

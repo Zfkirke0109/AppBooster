@@ -4,6 +4,8 @@ import android.util.Log
 import com.tony.appbooster.domain.client.AdbShellClient
 import com.tony.appbooster.domain.client.ShizukuShellClient
 import com.tony.appbooster.domain.model.common.ShellCommandResult
+import com.tony.appbooster.domain.model.common.ShellCommandSpec
+import com.tony.appbooster.domain.model.common.requireSuccess
 import com.tony.appbooster.domain.model.shizuku.ShizukuState
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -69,7 +71,7 @@ class AdbShellClientImpl @Inject constructor(
         }
     }
 
-    override suspend fun executeDetailed(command: String): ShellCommandResult {
+    override suspend fun executeDetailed(command: ShellCommandSpec): ShellCommandResult {
         ensureConnected()
 
         // Do not log commands here to avoid duplicated logs; repositories already log "> <command>".
@@ -87,12 +89,13 @@ class AdbShellClientImpl @Inject constructor(
         )
     }
 
-    override suspend fun execute(command: String): String {
-        // Preserve existing behavior for callers that only need stdout.
-        return executeDetailed(command).stdout
+    override suspend fun execute(command: ShellCommandSpec): String {
+        return executeDetailed(command)
+            .requireSuccess(command.displayCommand)
+            .stdout
     }
 
-    override fun stream(command: String): Flow<Result<String>> {
+    override fun stream(command: ShellCommandSpec): Flow<Result<String>> {
         return shizukuClient.executeStreaming(command)
     }
 

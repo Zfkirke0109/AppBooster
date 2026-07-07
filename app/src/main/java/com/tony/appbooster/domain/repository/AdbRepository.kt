@@ -3,8 +3,10 @@ package com.tony.appbooster.domain.repository
 import com.tony.appbooster.domain.model.common.OptimizationAnalysis
 import com.tony.appbooster.domain.model.common.OptimizationLogEntry
 import com.tony.appbooster.domain.model.common.OptimizationProgress
+import com.tony.appbooster.domain.model.common.OptimizationRollbackCandidate
 import com.tony.appbooster.domain.model.common.Resource
 import com.tony.appbooster.domain.model.settings.AppOptimizationType
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -48,6 +50,8 @@ interface AdbRepository {
      * @return [StateFlow] emitting [OptimizationProgress] snapshots.
      */
     val optimizationProgress: StateFlow<OptimizationProgress>
+
+    fun observeRollbackCandidates(): Flow<List<OptimizationRollbackCandidate>>
 
 
     /**
@@ -134,4 +138,6 @@ interface AdbRepository {
      * @return [Resource.Success] when the snapshot was cleared, or [Resource.Error] on failure.
      */
     suspend fun clearOptimizationResult(): Resource<Unit>
+
+    suspend fun rollbackOptimization(packageName: String): Resource<Unit>
 }

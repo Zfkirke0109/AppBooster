@@ -1,5 +1,6 @@
 package com.tony.appbooster.presentation.viewmodel.settings
 
+import com.tony.appbooster.domain.model.common.OptimizationRollbackCandidate
 import com.tony.appbooster.domain.model.settings.AppOptimizationType
 import com.tony.appbooster.domain.model.shizuku.ShizukuState
 
@@ -15,6 +16,10 @@ import com.tony.appbooster.domain.model.shizuku.ShizukuState
  */
 data class SettingsUiState(
     val appOptimizationType: AppOptimizationType = AppOptimizationType.SPEED_PROFILE,
+    val heavyAppPackages: Set<String> = emptySet(),
+    val heavyAppPackageInput: String = "",
+    val rollbackCandidates: List<OptimizationRollbackCandidate> = emptyList(),
+    val rollingBackPackageName: String? = null,
     val appVersionName: String = "",
     val appVersionChannel: String? = null,
     val shizukuState: ShizukuState = ShizukuState.NotRunning

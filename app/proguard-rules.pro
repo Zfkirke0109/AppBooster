@@ -1,21 +1,32 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# Keep annotation and generic metadata used by Hilt, Room, and generated binders.
+-keepattributes RuntimeVisibleAnnotations,RuntimeVisibleParameterAnnotations,AnnotationDefault,Signature,InnerClasses,EnclosingMethod
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Shizuku binds this service class across process boundaries. Keep the stable
+# service implementation and the AIDL/Binder contract names intact.
+-keep class com.tony.appbooster.data.client.ShellService { *; }
+-keep class com.tony.appbooster.IShellService { *; }
+-keep class com.tony.appbooster.IShellService$Stub { *; }
+-keep class com.tony.appbooster.IShellService$Stub$Proxy { *; }
+-keep class rikka.shizuku.** { *; }
+-keep class moe.shizuku.** { *; }
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# WorkManager persists worker class names. Keep names so queued work can resume
+# after app updates and process death.
+-keepnames class * extends androidx.work.ListenableWorker
+-keep class com.tony.appbooster.presentation.worker.** { *; }
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Hilt generated entry points and injected constructors are normally covered by
+# library consumer rules, but these keeps protect release builds if dependency
+# rules change.
+-keep class dagger.hilt.** { *; }
+-keep class javax.inject.** { *; }
+-keep class * extends dagger.hilt.android.internal.lifecycle.HiltViewModelFactory { *; }
+-keep class **_HiltModules_* { *; }
+-keep class **_Factory { *; }
+
+# Room reflects over annotations during schema validation and uses generated
+# implementation names. Keep database, DAO, and entity types.
+-keep @androidx.room.Database class * { *; }
+-keep @androidx.room.Dao class * { *; }
+-keep @androidx.room.Entity class * { *; }
+-keep class * extends androidx.room.RoomDatabase { *; }

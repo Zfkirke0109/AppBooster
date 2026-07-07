@@ -1,8 +1,10 @@
 package com.tony.appbooster.di
 
 import com.tony.appbooster.data.repository.AppInfoRepositoryImpl
+import com.tony.appbooster.data.repository.DeviceGuardRepositoryImpl
 import com.tony.appbooster.data.repository.SettingsDataStoreRepository
 import com.tony.appbooster.domain.repository.AppInfoRepository
+import com.tony.appbooster.domain.repository.DeviceGuardRepository
 import com.tony.appbooster.domain.repository.SettingsRepository
 import dagger.Binds
 import dagger.Module
@@ -50,4 +52,10 @@ abstract class RepositoryModule {
     abstract fun bindSettingsRepository(
         impl: SettingsDataStoreRepository
     ): SettingsRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindDeviceGuardRepository(
+        impl: DeviceGuardRepositoryImpl
+    ): DeviceGuardRepository
 }

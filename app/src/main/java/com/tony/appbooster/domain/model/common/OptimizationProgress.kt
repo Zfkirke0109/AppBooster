@@ -49,4 +49,14 @@ sealed interface OptimizationResult {
      * The optimization flow was stopped before completion.
      */
     data object Canceled : OptimizationResult
+
+    /**
+     * The optimization flow stopped because a shell command failed.
+     */
+    data object Failed : OptimizationResult
+
+    /**
+     * The optimization flow paused because device health guards blocked it.
+     */
+    data class Paused(val reason: String) : OptimizationResult
 }
