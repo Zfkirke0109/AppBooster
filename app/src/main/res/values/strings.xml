@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">OptiDroid</string>
+    <string name="app_name">Galaxy OptiDroid</string>
     <string name="ok">ok</string>
     <!-- Settings screen title -->
     <string name="settings_title">Settings</string>
@@ -69,10 +69,10 @@
 
     <!-- Notification permission rationale -->
     <string name="notification_permission_rationale_title">Enable notifications?</string>
-    <string name="notification_permission_rationale_message">OptiDroid uses a foreground notification to keep optimization running in the background and to show a Stop button.\n\nWe only post notifications while optimization is running.</string>
+    <string name="notification_permission_rationale_message">Galaxy OptiDroid uses a foreground notification to keep optimization running in the background and to show a Stop button.\n\nWe only post notifications while optimization is running.</string>
 
     <!-- Dashboard -->
-    <string name="dashboard_title">OptiDroid</string>
+    <string name="dashboard_title">Galaxy OptiDroid</string>
     <string name="dashboard_optimizing_title">Optimizing Apps</string>
     <string name="dashboard_optimizing_subtitle">Please wait while we enhance performance</string>
     <string name="dashboard_current_app_label">Current app</string>
@@ -197,7 +197,7 @@
     <string name="dashboard_ready_full_optimization_title">Gaming / Heavy Apps</string>
     <string name="dashboard_ready_full_optimization_description">Full speed compilation for selected apps only</string>
 
-    <string name="about_app_title">OptiDroid</string>
+    <string name="about_app_title">Galaxy OptiDroid</string>
     <string name="about_version_fallback">1.0.0</string>
     <string name="about_open_source_title">Open Source</string>
     <string name="about_open_source_description">View the source code on GitHub</string>
@@ -232,7 +232,7 @@
     <string name="survival_standby_title">Standby bucket</string>
     <string name="survival_standby_description">Verified with am get-standby-bucket so Good Guardians or One UI restrictions are visible.</string>
     <string name="survival_unrestricted_title">Set battery to Unrestricted</string>
-    <string name="survival_unrestricted_description">Open settings, choose Battery, then set OptiDroid to Unrestricted. Refresh here after changing it.</string>
+    <string name="survival_unrestricted_description">Open settings, choose Battery, then set Galaxy OptiDroid to Unrestricted. Refresh here after changing it.</string>
 
     <!-- Optimization analysis -->
     <string name="analysis_scanning_title">Analyzing Apps</string>

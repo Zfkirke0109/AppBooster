@@ -12,6 +12,7 @@ import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 /**
  * Receives the Stop action from the foreground notification and cancels the running Worker.
@@ -28,21 +29,28 @@ class OptimizationWorkerStopReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         val workId = intent.getStringExtra(EXTRA_WORK_ID) ?: return
-
-        // 1) Stop the worker itself.
-        WorkManager.getInstance(context).cancelWorkById(java.util.UUID.fromString(workId))
-
-        // 2) Immediately request repository-side cancellation so StateFlows update even if the worker
-        // is killed before it can execute its `catch (CancellationException)` block.
-        val entryPoint = EntryPointAccessors.fromApplication(
-            context.applicationContext,
-            WorkerStopReceiverEntryPoint::class.java
-        )
+        val workUuid = runCatching { UUID.fromString(workId) }.getOrNull() ?: return
+        val pendingResult = goAsync()
+        val appContext = context.applicationContext
 
         CoroutineScope(Dispatchers.Default).launch {
-            // Safe to call both; each method is a no-op if not running.
-            entryPoint.adbRepository().cancelOptimization()
-            entryPoint.adbRepository().cancelAnalysis()
+            try {
+                // 1) Stop the worker itself.
+                WorkManager.getInstance(appContext).cancelWorkById(workUuid)
+
+                // 2) Immediately request repository-side cancellation so StateFlows update even if the worker
+                // is killed before it can execute its `catch (CancellationException)` block.
+                val entryPoint = EntryPointAccessors.fromApplication(
+                    appContext,
+                    WorkerStopReceiverEntryPoint::class.java
+                )
+
+                // Safe to call both; each method is a no-op if not running.
+                entryPoint.adbRepository().cancelOptimization()
+                entryPoint.adbRepository().cancelAnalysis()
+            } finally {
+                pendingResult.finish()
+            }
         }
     }
 

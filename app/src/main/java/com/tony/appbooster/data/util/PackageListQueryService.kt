@@ -1,5 +1,6 @@
 package com.tony.appbooster.data.util
 
+import com.tony.appbooster.BuildConfig
 import com.tony.appbooster.data.util.PackageListQueryService.Companion.SELF_PACKAGE_NAME
 import com.tony.appbooster.domain.client.AdbShellDataSource
 import com.tony.appbooster.domain.model.common.ShellCommandSpec
@@ -26,7 +27,7 @@ class PackageListQueryService @Inject constructor(
 
     companion object {
         /** Package name of this app, excluded from optimization to prevent self-crash. */
-        internal const val SELF_PACKAGE_NAME = "com.tony.appbooster"
+        internal val SELF_PACKAGE_NAME: String = BuildConfig.APPLICATION_ID
 
         /** Maximum characters shown when previewing raw command output for diagnostics. */
         private const val OUTPUT_PREVIEW_LENGTH = 500

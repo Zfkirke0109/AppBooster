@@ -2,7 +2,7 @@
   <img src="docs/images/logo.png" width="192" alt="OptiDroid App Icon"/>
 </p>
 
-<h1 align="center">OptiDroid</h1>
+<h1 align="center">Galaxy OptiDroid</h1>
 
 <p align="center">
   <strong>Supercharge your Android device performance — one tap at a time.</strong>
@@ -30,7 +30,7 @@
 </p>
 
 <p align="center">
-  <a href="https://play.google.com/store/apps/details?id=com.tony.appbooster">
+  <a href="https://play.google.com/store/apps/details?id=com.zfkirke0109.galaxyoptidroid">
     <img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" width="220"/>
   </a>
 </p>
@@ -40,7 +40,7 @@
 
 ## ✨ What is OptiDroid?
 
-**OptiDroid** is a modern Android app that optimizes the ART (Android Runtime) compilation of every installed app on your device. It leverages `dex2oat` — Android's ahead-of-time compiler — to re-compile apps with aggressive optimization profiles, resulting in **faster app launches**, **smoother scrolling**, and **better overall performance**.
+**Galaxy OptiDroid** is a modern Android app that optimizes the ART (Android Runtime) compilation of every installed app on your device. It leverages `dex2oat` — Android's ahead-of-time compiler — to re-compile apps with aggressive optimization profiles, resulting in **faster app launches**, **smoother scrolling**, and **better overall performance**.
 
 > Think of it as defragmenting your phone's app layer — apps run native-speed code instead of interpreted bytecode.
 
@@ -188,6 +188,8 @@ com.tony.appbooster/
 └── 📂 di/                # Hilt dependency injection modules
 ```
 
+The installed Android package ID is `com.zfkirke0109.galaxyoptidroid`. The Kotlin source namespace remains `com.tony.appbooster` to avoid a large mechanical package move unrelated to release behavior.
+
 ---
 
 ## 🛠️ Tech Stack
@@ -249,13 +251,14 @@ The repository includes a GitHub Actions workflow at `.github/workflows/android-
 
 | Job | Trigger | What it does |
 |-----|---------|--------------|
+| **Signing secret scan** | Every push & PR | Fails if signing files or local signing properties are tracked |
 | **Unit tests** | Every push & PR | Runs `./gradlew runUnitTests` (the existing Gradle task) |
-| **Signed release build** | Push to `master` only, after tests pass | Builds signed APK + AAB |
-| **Publish GitHub Release** | After signed build succeeds | Creates a GitHub Release with the **merged PR body as changelog** and attaches the APK & AAB |
+| **Signed release build** | Push to `master`, `main`, or `v*` tags, after tests pass | Builds signed APK + AAB and verifies the APK signature with `apksigner` |
+| **Publish GitHub Release** | Push to `v*` tags only | Creates a GitHub Release from recent commit notes and attaches the APK & AAB |
 
-The release tag is derived automatically from `versionName` and `versionCode` in `app/build.gradle.kts` (e.g. `v1.0-1`).
+Release publishing is tag-driven. Push a tag such as `v1.6.0` after on-device validation to publish a GitHub Release.
 
-> **Changelog**: When you merge a PR into `master`, the CI extracts the PR description and uses it as the release notes. If no matching PR is found (e.g. a direct push), it falls back to the last 10 commit messages.
+> **Changelog**: The release workflow generates notes from commits since the previous tag. If no prior tag exists, it uses recent commits for the initial release notes.
 
 Configure these repository secrets:
 
@@ -267,6 +270,8 @@ Configure these repository secrets:
 | `GH_RELEASE_STORE_PASSWORD` | Password for the keystore itself |
 
 All four secrets are **required** for the release & publish jobs. Unit tests still run on every push and PR regardless of secrets.
+
+Signing secrets must stay out of source control. Keep local signing values in `~/.gradle/gradle.properties`, not the tracked root `gradle.properties`. See `docs/s23-ultra-validation.md` for the release APK validation checklist.
 
 ---
 

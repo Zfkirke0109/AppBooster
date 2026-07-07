@@ -30,7 +30,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.tony.appbooster"
+        applicationId = "com.zfkirke0109.galaxyoptidroid"
         minSdk = 26
         targetSdk = 36
 

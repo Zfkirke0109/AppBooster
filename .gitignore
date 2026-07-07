@@ -29,3 +29,17 @@ local.properties
 *.p12
 *.pfx
 *.bks
+*.pem
+*.pk8
+*.x509.pem
+*.mobileprovision
+
+# Local signing configuration. The tracked root gradle.properties must remain
+# secret-free; user-specific signing values belong in ~/.gradle/gradle.properties.
+.gradle/gradle.properties
+**/.gradle/gradle.properties
+signing.properties
+keystore.properties
+release-signing.properties
+gradle-local.properties
+*.local.gradle.properties

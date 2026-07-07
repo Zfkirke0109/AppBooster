@@ -673,13 +673,13 @@ class AdbRepositoryImpl @Inject constructor(
                 logger.addLog(trimmed)
             }
 
-            if (checkCancelled(plan.runId, _optimizationProgress.value.processedCount + 1)) return
-
             val newCount = _optimizationProgress.value.processedCount + 1
             _optimizationProgress.value = _optimizationProgress.value.copy(
                 processedCount = newCount,
                 progress = newCount.toFloat() / plan.totalCount.toFloat()
             )
+
+            if (checkCancelled(plan.runId, newCount)) return
         }
     }
 

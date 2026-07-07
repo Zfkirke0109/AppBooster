@@ -4,8 +4,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -35,48 +38,69 @@ internal fun RollbackCandidatesCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         } else {
-            candidates.forEach { candidate ->
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = candidate.packageName,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = stringResource(
-                                    R.string.settings_rollback_filter_summary,
-                                    candidate.beforeFilter ?: stringResource(R.string.survival_value_unknown),
-                                    candidate.afterFilter ?: stringResource(R.string.survival_value_unknown)
-                                ),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Button(
-                            onClick = { onRollbackPackage(candidate.packageName) },
-                            enabled = rollingBackPackageName == null
-                        ) {
-                            if (rollingBackPackageName == candidate.packageName) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(18.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.onPrimary
-                                )
-                            } else {
-                                Text(stringResource(R.string.action_reset))
-                            }
-                        }
-                    }
+            LazyColumn(
+                modifier = Modifier.heightIn(max = 420.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                items(
+                    items = candidates,
+                    key = { candidate -> candidate.packageName }
+                ) { candidate ->
+                    RollbackCandidateRow(
+                        candidate = candidate,
+                        rollingBackPackageName = rollingBackPackageName,
+                        onRollbackPackage = onRollbackPackage
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RollbackCandidateRow(
+    candidate: OptimizationRollbackCandidate,
+    rollingBackPackageName: String?,
+    onRollbackPackage: (String) -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = candidate.packageName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = stringResource(
+                        R.string.settings_rollback_filter_summary,
+                        candidate.beforeFilter ?: stringResource(R.string.survival_value_unknown),
+                        candidate.afterFilter ?: stringResource(R.string.survival_value_unknown)
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Button(
+                onClick = { onRollbackPackage(candidate.packageName) },
+                enabled = rollingBackPackageName == null
+            ) {
+                if (rollingBackPackageName == candidate.packageName) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                } else {
+                    Text(stringResource(R.string.action_reset))
                 }
             }
         }
