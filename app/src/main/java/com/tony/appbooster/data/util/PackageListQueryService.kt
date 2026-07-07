@@ -50,7 +50,10 @@ class PackageListQueryService @Inject constructor(
     suspend fun queryInstalledPackages(): List<String> {
         queryPackages(ShellCommandSpec.ListPackages)?.let { return it }
 
-        logger.addLog("pm list packages failed or returned nothing; falling back to dumpsys package.")
+        logger.addLog(
+            "pm list packages returned no results (possible on some OEM shells); " +
+                "attempting dumpsys package fallback despite higher Binder overflow risk."
+        )
         return queryPackages(ShellCommandSpec.DumpsysPackage) ?: emptyList()
     }
 

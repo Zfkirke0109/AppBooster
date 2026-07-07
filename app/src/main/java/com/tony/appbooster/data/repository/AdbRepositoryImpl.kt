@@ -58,6 +58,11 @@ class AdbRepositoryImpl @Inject constructor(
     private val settingsRepository: SettingsRepository
 ) : AdbRepository {
 
+    companion object {
+        /** Max failed package names listed by name in the end-of-run failure summary log. */
+        private const val FAILED_PACKAGES_LOG_PREVIEW_COUNT = 10
+    }
+
     private val _connectionState =
         MutableStateFlow<AdbConnectionState>(AdbConnectionState.Disconnected)
     override val connectionState = _connectionState.asStateFlow()
@@ -629,7 +634,7 @@ class AdbRepositoryImpl @Inject constructor(
         plan: OptimizationRunPlan,
         compileMode: String
     ) {
-        var failedCount = 0
+        val failedPackages = mutableListOf<String>()
 
         plan.steps.forEach { step ->
             if (step.status == OptimizationStepStatus.SUCCEEDED) return@forEach
@@ -657,7 +662,7 @@ class AdbRepositoryImpl @Inject constructor(
                 .mapCatching { it.requireSuccess(command.displayCommand) }
                 .getOrElse { throwable ->
                     recordStepFailure(step.id, packageName, throwable)
-                    failedCount++
+                    failedPackages += packageName
                     return@forEach
                 }
 
@@ -690,10 +695,14 @@ class AdbRepositoryImpl @Inject constructor(
             if (checkCancelled(plan.runId, newCount)) return
         }
 
-        if (failedCount > 0) {
-            logger.addLog("⚠ $failedCount app(s) failed to optimize and were skipped; the rest were processed normally.")
+        if (failedPackages.isNotEmpty()) {
+            val failedCount = failedPackages.size
+            val namesPreview = failedPackages.take(FAILED_PACKAGES_LOG_PREVIEW_COUNT).joinToString(", ")
+            val remaining = failedCount - minOf(failedCount, FAILED_PACKAGES_LOG_PREVIEW_COUNT)
+            val namesSummary = if (remaining > 0) "$namesPreview, and $remaining more" else namesPreview
+            logger.addLog("⚠ $failedCount app(s) failed to optimize and were skipped ($namesSummary); the rest were processed normally.")
             logger.addLogEntry(LogEntryType.ERROR, messageKey = LogMessageKey.OPTIMIZATION_FAILED_APP,
-                detail = "$failedCount app(s) skipped due to errors")
+                detail = "$failedCount app(s) skipped due to errors: $namesSummary")
         }
     }
 
