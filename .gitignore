@@ -23,6 +23,10 @@ local.properties
 *.txt
 *.log
 
+# Copilot-visible diagnostic context tracked intentionally despite the broad *.txt ignore.
+# Keep this narrow so random local logs stay ignored.
+!docs/copilot/optidroid_scan.txt
+
 # Local signing material
 *.jks
 *.keystore
