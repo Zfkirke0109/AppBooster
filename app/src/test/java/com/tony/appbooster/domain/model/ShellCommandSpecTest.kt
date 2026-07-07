@@ -44,6 +44,15 @@ class ShellCommandSpecTest {
     }
 
     @Test
+    fun `given list packages spec when checked then allowed`() {
+        assertEquals(
+            listOf("pm", "list", "packages"),
+            ShellCommandSpec.ListPackages.argv
+        )
+        assertTrue(ShellCommandSpec.isAllowedArgv(ShellCommandSpec.ListPackages.argv))
+    }
+
+    @Test
     fun `given thermal service spec when checked then allowed`() {
         assertEquals(
             listOf("dumpsys", "thermalservice"),

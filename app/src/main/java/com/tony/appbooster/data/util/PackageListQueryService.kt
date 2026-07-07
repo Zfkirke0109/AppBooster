@@ -34,12 +34,34 @@ class PackageListQueryService @Inject constructor(
     }
 
     /**
-     * Queries all installed package names from the device using `dumpsys package`.
+     * Queries all installed package names from the device.
+     *
+     * Uses `pm list packages` as the primary source: its output is a single
+     * `package:<name>` line per app with no extra metadata, so it stays
+     * comfortably within the Binder IPC transaction size limit even on
+     * devices with hundreds of installed apps/packages (e.g. Samsung phones
+     * with extensive OEM/Knox bloatware). If it yields no parsable packages
+     * (unexpected but possible on some OEM shells), falls back to the more
+     * verbose `dumpsys package`, which is more likely to fail via Binder
+     * transaction overflow on such devices but is kept as a last resort.
      *
      * @return List of normalised package names, or an empty list on failure.
      */
     suspend fun queryInstalledPackages(): List<String> {
-        val command = ShellCommandSpec.DumpsysPackage
+        queryPackages(ShellCommandSpec.ListPackages)?.let { return it }
+
+        logger.addLog("pm list packages failed or returned nothing; falling back to dumpsys package.")
+        return queryPackages(ShellCommandSpec.DumpsysPackage) ?: emptyList()
+    }
+
+    /**
+     * Executes [command] and parses its output into a package name list.
+     *
+     * @param command Shell command expected to enumerate installed packages.
+     * @return Parsed package list, or null if the command failed or produced
+     * no parsable packages.
+     */
+    private suspend fun queryPackages(command: ShellCommandSpec): List<String>? {
         logger.addLog("> ${command.displayCommand}")
         val result = shellDataSource.executeCommand(command)
 
@@ -51,14 +73,14 @@ class PackageListQueryService @Inject constructor(
                     return@fold packages
                 }
 
-                logger.addLog("dumpsys package returned no parsable packages.")
+                logger.addLog("${command.displayCommand} returned no parsable packages.")
                 logger.addLog("Raw output length: ${output.length} chars")
                 logger.addLog("Preview: ${output.take(OUTPUT_PREVIEW_LENGTH).replace("\n", "\\n")}")
-                emptyList()
+                null
             },
             onFailure = { throwable ->
-                logger.addLog("Failed to query installed packages: ${throwable.message}")
-                emptyList()
+                logger.addLog("Failed to query installed packages via ${command.displayCommand}: ${throwable.message}")
+                null
             }
         )
     }
