@@ -272,15 +272,13 @@ class OptimizationWorker @AssistedInject constructor(
         val progressTotal: Int? = null,
         val showStopAction: Boolean = true
     ) {
-        private val stableMaterialKey: String by lazy(LazyThreadSafetyMode.NONE) {
-            listOf(
-                currentLabel.orEmpty(),
-                progressPercent?.coerceIn(0, 100)?.toString() ?: "null",
-                progressCurrent?.toString() ?: "null",
-                progressTotal?.toString() ?: "null",
-                showStopAction.toString()
-            ).joinToString("|")
-        }
+        private val stableMaterialKey: String = listOf(
+            currentLabel.orEmpty(),
+            progressPercent?.coerceIn(0, 100)?.toString() ?: "null",
+            progressCurrent?.toString() ?: "null",
+            progressTotal?.toString() ?: "null",
+            showStopAction.toString()
+        ).joinToString("|")
 
         /**
          * Stable key representing user-visible notification content/material actions.
@@ -298,6 +296,7 @@ class OptimizationWorker @AssistedInject constructor(
      * @return True when the run ended by completion, cancellation, failure, or pause.
      */
     private fun OptimizationProgress.isTerminalState(): Boolean {
+        // Both checks are required: idle startup/placeholder states also have isRunning=false.
         return !isRunning && result !is OptimizationResult.None
     }
 

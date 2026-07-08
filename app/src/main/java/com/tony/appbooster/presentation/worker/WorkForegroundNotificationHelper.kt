@@ -33,12 +33,12 @@ object WorkForegroundNotificationHelper {
      * @param context Context used to register the notification channel.
      */
     fun ensureChannel(context: Context) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || isChannelEnsured.get()) {
+        if (shouldSkipEnsureChannel()) {
             return
         }
 
         synchronized(this) {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || isChannelEnsured.get()) {
+            if (shouldSkipEnsureChannel()) {
                 return
             }
 
@@ -186,6 +186,10 @@ object WorkForegroundNotificationHelper {
 
     private const val NOTIFICATION_CHANNEL_ID = "optimization"
     private const val NOTIFICATION_ID = 1001
+
+    private fun shouldSkipEnsureChannel(): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.O || isChannelEnsured.get()
+    }
 
     @VisibleForTesting
     internal fun resetForTesting() {
