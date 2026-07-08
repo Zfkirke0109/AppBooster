@@ -108,7 +108,7 @@ class OptimizationWorker @AssistedInject constructor(
     companion object {
         const val KEY_OPTIMIZATION_MODE = "optimization_mode"
         const val KEY_FORCE_OPTIMIZE = "force_optimize"
-        private const val NOTIFICATION_MIN_UPDATE_INTERVAL_MS = 1_000L
+        private const val NOTIFICATION_UPDATE_INTERVAL_MS = 1_000L
         private const val NOTIFICATION_LOG_TAG = "OptimizationWorkerNotification"
 
         /**
@@ -149,7 +149,10 @@ class OptimizationWorker @AssistedInject constructor(
 
     /**
      * Coalesces foreground notification updates so WorkManager is not spammed by per-tick state
-     * emissions while still publishing immediate terminal state transitions.
+     * emissions.
+     *
+     * Progress updates are throttled to roughly one publish per second, while start/completed/
+     * canceled/failed/paused updates bypass throttling to keep terminal states immediate.
      */
     private inner class ForegroundNotificationUpdater {
         private var lastPublishedAtMs: Long = 0L
@@ -210,7 +213,7 @@ class OptimizationWorker @AssistedInject constructor(
                 return
             }
 
-            if (!forceUpdate && (now - lastPublishedAtMs) < NOTIFICATION_MIN_UPDATE_INTERVAL_MS) {
+            if (!forceUpdate && (now - lastPublishedAtMs) < NOTIFICATION_UPDATE_INTERVAL_MS) {
                 logNotificationEvent("skipped_throttled", reason, state, now)
                 return
             }
@@ -239,6 +242,9 @@ class OptimizationWorker @AssistedInject constructor(
             state: NotificationRenderState,
             timestampMs: Long
         ) {
+            if (!Log.isLoggable(NOTIFICATION_LOG_TAG, Log.DEBUG)) {
+                return
+            }
             Log.d(
                 NOTIFICATION_LOG_TAG,
                 "event=$eventName reason=$reason ts_ms=$timestampMs " +
@@ -266,19 +272,21 @@ class OptimizationWorker @AssistedInject constructor(
         val progressTotal: Int? = null,
         val showStopAction: Boolean = true
     ) {
+        private val stableMaterialKey: String = listOf(
+            currentLabel.orEmpty(),
+            progressPercent?.coerceIn(0, 100)?.toString() ?: "null",
+            progressCurrent?.toString() ?: "null",
+            progressTotal?.toString() ?: "null",
+            showStopAction.toString()
+        ).joinToString("|")
+
         /**
          * Stable key representing user-visible notification content/material actions.
          *
          * @return Key used to skip duplicate updates.
          */
         fun materialKey(): String {
-            return listOf(
-                currentLabel.orEmpty(),
-                progressPercent?.coerceIn(0, 100)?.toString() ?: "null",
-                progressCurrent?.toString() ?: "null",
-                progressTotal?.toString() ?: "null",
-                showStopAction.toString()
-            ).joinToString("|")
+            return stableMaterialKey
         }
     }
 

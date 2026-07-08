@@ -13,6 +13,7 @@ import androidx.work.ForegroundInfo
 import com.tony.appbooster.R
 import com.tony.appbooster.presentation.activity.MainActivity
 import kotlin.math.roundToInt
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Builds and manages the foreground notification used by long-running WorkManager jobs.
@@ -24,8 +25,7 @@ import kotlin.math.roundToInt
  */
 object WorkForegroundNotificationHelper {
 
-    @Volatile
-    private var isChannelEnsured = false
+    private val isChannelEnsured = AtomicBoolean(false)
 
     /**
      * Ensures the foreground notification channel exists.
@@ -33,13 +33,13 @@ object WorkForegroundNotificationHelper {
      * @param context Context used to register the notification channel.
      */
     fun ensureChannel(context: Context) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || isChannelEnsured) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || isChannelEnsured.get()) {
             return
         }
 
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         synchronized(this) {
-            if (isChannelEnsured) {
+            if (isChannelEnsured.get()) {
                 return
             }
 
@@ -54,7 +54,7 @@ object WorkForegroundNotificationHelper {
                 manager.createNotificationChannel(channel)
             }
 
-            isChannelEnsured = true
+            isChannelEnsured.set(true)
         }
     }
 
@@ -189,6 +189,6 @@ object WorkForegroundNotificationHelper {
 
     @VisibleForTesting
     internal fun resetForTesting() {
-        isChannelEnsured = false
+        isChannelEnsured.set(false)
     }
 }
