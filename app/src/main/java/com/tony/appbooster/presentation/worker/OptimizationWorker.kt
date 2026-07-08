@@ -1,11 +1,15 @@
 package com.tony.appbooster.presentation.worker
 
 import android.content.Context
+import android.os.SystemClock
+import android.util.Log
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.tony.appbooster.domain.model.common.Resource
+import com.tony.appbooster.domain.model.common.OptimizationProgress
+import com.tony.appbooster.domain.model.common.OptimizationResult
 import com.tony.appbooster.domain.model.settings.AppOptimizationType
 import com.tony.appbooster.domain.repository.AdbRepository
 import com.tony.appbooster.domain.usecase.adb.EnsureAdbConnectedUseCase
@@ -51,17 +55,8 @@ class OptimizationWorker @AssistedInject constructor(
 
         WorkForegroundNotificationHelper.ensureChannel(applicationContext)
 
-        // Start foreground immediately.
-        setForeground(
-            WorkForegroundNotificationHelper.createForegroundInfo(
-                context = applicationContext,
-                workId = id.toString(),
-                currentLabel = null,
-                progressPercent = null,
-                progressCurrent = null,
-                progressTotal = null
-            )
-        )
+        val notificationUpdater = ForegroundNotificationUpdater()
+        notificationUpdater.publishStart(workId = id.toString())
 
         // Update notification whenever the current package/progress changes.
         val notificationJob: Job = launch {
@@ -71,16 +66,9 @@ class OptimizationWorker @AssistedInject constructor(
                     "${progress.currentAppPackage}|${(progress.progress * 100f).toInt()}|${progress.processedCount}|${progress.totalCount}"
                 }
                 .collect { progress ->
-                    val percent = (progress.progress * 100f).toInt().coerceIn(0, 100)
-                    setForeground(
-                        WorkForegroundNotificationHelper.createForegroundInfo(
-                            context = applicationContext,
-                            workId = id.toString(),
-                            currentLabel = progress.currentAppPackage.ifBlank { null },
-                            progressPercent = if (progress.totalCount > 0) percent else null,
-                            progressCurrent = progress.processedCount,
-                            progressTotal = progress.totalCount
-                        )
+                    notificationUpdater.publishProgress(
+                        workId = id.toString(),
+                        progress = progress
                     )
                 }
         }
@@ -120,6 +108,9 @@ class OptimizationWorker @AssistedInject constructor(
     companion object {
         const val KEY_OPTIMIZATION_MODE = "optimization_mode"
         const val KEY_FORCE_OPTIMIZE = "force_optimize"
+        // Keep progress updates at ~1/s to stay below Android enqueue shedding thresholds.
+        private const val NOTIFICATION_UPDATE_INTERVAL_MILLIS = 1000L
+        private const val NOTIFICATION_LOG_TAG = "OptimizationWorkerNotification"
 
         /**
          * Enqueues a unique optimization worker.
@@ -155,5 +146,166 @@ class OptimizationWorker @AssistedInject constructor(
 
         private const val UNIQUE_WORK_NAME = "optimization_work"
         const val TAG = "optimization"
+    }
+
+    /**
+     * Coalesces foreground notification updates so WorkManager is not spammed by per-tick state
+     * emissions.
+     *
+     * Progress updates are throttled to roughly one publish per second, while start/completed/
+     * canceled/failed/paused updates bypass throttling to keep terminal states immediate.
+     *
+     * @property lastPublishedAtMs Elapsed realtime of the last published notification update.
+     * @property lastPublishedState Last published material notification state for deduplication.
+     */
+    private inner class ForegroundNotificationUpdater {
+        private var lastPublishedAtMs: Long = 0L
+        private var lastPublishedState: NotificationRenderState? = null
+
+        /**
+         * Publishes the required initial foreground notification immediately.
+         *
+         * @param workId Active work id used by the stop action pending intent.
+         */
+        suspend fun publishStart(workId: String) {
+            publish(
+                workId = workId,
+                state = NotificationRenderState(),
+                forceUpdate = true,
+                terminalUpdate = false,
+                reason = "start"
+            )
+        }
+
+        /**
+         * Publishes progress notification updates with throttle and duplicate suppression.
+         *
+         * @param workId Active work id used by the stop action pending intent.
+         * @param progress Current optimization progress snapshot.
+         */
+        suspend fun publishProgress(workId: String, progress: OptimizationProgress) {
+            val percent = (progress.progress * 100f).toInt().coerceIn(0, 100)
+            val state = NotificationRenderState(
+                currentLabel = progress.currentAppPackage.ifBlank { null },
+                progressPercent = if (progress.totalCount > 0) percent else null,
+                progressCurrent = progress.processedCount,
+                progressTotal = progress.totalCount,
+                showStopAction = !progress.isTerminalState()
+            )
+
+            val terminalReason = progress.terminalReason()
+            publish(
+                workId = workId,
+                state = state,
+                forceUpdate = terminalReason != null,
+                terminalUpdate = terminalReason != null,
+                reason = terminalReason ?: "progress"
+            )
+        }
+
+        private suspend fun publish(
+            workId: String,
+            state: NotificationRenderState,
+            forceUpdate: Boolean,
+            terminalUpdate: Boolean,
+            reason: String
+        ) {
+            val now = SystemClock.elapsedRealtime()
+            val duplicate = lastPublishedState == state
+            if (!forceUpdate && duplicate) {
+                logNotificationEvent("skipped_duplicate", reason, state, now)
+                return
+            }
+
+            if (!forceUpdate && (now - lastPublishedAtMs) < NOTIFICATION_UPDATE_INTERVAL_MILLIS) {
+                logNotificationEvent("skipped_throttled", reason, state, now)
+                return
+            }
+
+            setForeground(
+                WorkForegroundNotificationHelper.createForegroundInfo(
+                    context = applicationContext,
+                    workId = workId,
+                    currentLabel = state.currentLabel,
+                    progressPercent = state.progressPercent,
+                    progressCurrent = state.progressCurrent,
+                    progressTotal = state.progressTotal,
+                    showStopAction = state.showStopAction
+                )
+            )
+
+            lastPublishedAtMs = now
+            lastPublishedState = state
+            val eventName = if (terminalUpdate) "forced_terminal_update" else "published"
+            logNotificationEvent(eventName, reason, state, now)
+        }
+
+        private fun logNotificationEvent(
+            eventName: String,
+            reason: String,
+            state: NotificationRenderState,
+            timestampMs: Long
+        ) {
+            if (!Log.isLoggable(NOTIFICATION_LOG_TAG, Log.DEBUG)) {
+                return
+            }
+            Log.d(
+                NOTIFICATION_LOG_TAG,
+                "event=$eventName reason=$reason ts_ms=$timestampMs " +
+                    "label=${state.currentLabel ?: "none"} " +
+                    "progress=${state.progressPercent ?: -1} " +
+                    "count=${state.progressCurrent}/${state.progressTotal} " +
+                    "stopAction=${state.showStopAction}"
+            )
+        }
+    }
+
+    /**
+     * Snapshot of material fields used to render and deduplicate notification updates.
+     *
+     * @property currentLabel Optional package name shown in the content text.
+     * @property progressPercent Optional normalized percent [0,100] for determinate progress.
+     * @property progressCurrent Optional processed item count.
+     * @property progressTotal Optional total item count.
+     * @property showStopAction Whether the stop action is shown.
+     */
+    private data class NotificationRenderState(
+        val currentLabel: String? = null,
+        val progressPercent: Int? = null,
+        val progressCurrent: Int? = null,
+        val progressTotal: Int? = null,
+        val showStopAction: Boolean = true
+    )
+
+    /**
+     * Indicates whether the progress snapshot describes a finished optimization run.
+     *
+     * @receiver Progress snapshot emitted by [AdbRepository.optimizationProgress].
+     * The [OptimizationResult.None] state is treated as non-terminal because it is also used by
+     * startup/idle snapshots when no run has finished yet.
+     * @return True when the run ended by completion, cancellation, failure, or pause.
+     */
+    private fun OptimizationProgress.isTerminalState(): Boolean {
+        // Both checks are required: idle startup/placeholder states also have isRunning=false.
+        return !isRunning && result !is OptimizationResult.None
+    }
+
+    /**
+     * Resolves the terminal reason string used for forced immediate notification updates.
+     *
+     * @receiver Progress snapshot emitted by [AdbRepository.optimizationProgress].
+     * @return Terminal reason when the run is finished; otherwise null.
+     */
+    private fun OptimizationProgress.terminalReason(): String? {
+        if (!isTerminalState()) {
+            return null
+        }
+        return when (result) {
+            OptimizationResult.Completed -> "completed"
+            OptimizationResult.Canceled -> "canceled"
+            OptimizationResult.Failed -> "failed"
+            is OptimizationResult.Paused -> "paused"
+            else -> null
+        }
     }
 }
