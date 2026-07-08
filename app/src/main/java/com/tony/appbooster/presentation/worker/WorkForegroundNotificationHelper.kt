@@ -37,12 +37,12 @@ object WorkForegroundNotificationHelper {
             return
         }
 
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         synchronized(this) {
-            if (isChannelEnsured.get()) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || isChannelEnsured.get()) {
                 return
             }
 
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             if (manager.getNotificationChannel(NOTIFICATION_CHANNEL_ID) == null) {
                 val channel = NotificationChannel(
                     NOTIFICATION_CHANNEL_ID,

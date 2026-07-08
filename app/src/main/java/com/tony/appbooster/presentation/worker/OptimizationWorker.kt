@@ -108,7 +108,7 @@ class OptimizationWorker @AssistedInject constructor(
     companion object {
         const val KEY_OPTIMIZATION_MODE = "optimization_mode"
         const val KEY_FORCE_OPTIMIZE = "force_optimize"
-        private const val NOTIFICATION_UPDATE_INTERVAL_MS = 1_000L
+        private const val NOTIFICATION_UPDATE_INTERVAL_MILLIS = 1000L
         private const val NOTIFICATION_LOG_TAG = "OptimizationWorkerNotification"
 
         /**
@@ -213,7 +213,7 @@ class OptimizationWorker @AssistedInject constructor(
                 return
             }
 
-            if (!forceUpdate && (now - lastPublishedAtMs) < NOTIFICATION_UPDATE_INTERVAL_MS) {
+            if (!forceUpdate && (now - lastPublishedAtMs) < NOTIFICATION_UPDATE_INTERVAL_MILLIS) {
                 logNotificationEvent("skipped_throttled", reason, state, now)
                 return
             }
@@ -272,13 +272,15 @@ class OptimizationWorker @AssistedInject constructor(
         val progressTotal: Int? = null,
         val showStopAction: Boolean = true
     ) {
-        private val stableMaterialKey: String = listOf(
-            currentLabel.orEmpty(),
-            progressPercent?.coerceIn(0, 100)?.toString() ?: "null",
-            progressCurrent?.toString() ?: "null",
-            progressTotal?.toString() ?: "null",
-            showStopAction.toString()
-        ).joinToString("|")
+        private val stableMaterialKey: String by lazy(LazyThreadSafetyMode.NONE) {
+            listOf(
+                currentLabel.orEmpty(),
+                progressPercent?.coerceIn(0, 100)?.toString() ?: "null",
+                progressCurrent?.toString() ?: "null",
+                progressTotal?.toString() ?: "null",
+                showStopAction.toString()
+            ).joinToString("|")
+        }
 
         /**
          * Stable key representing user-visible notification content/material actions.
