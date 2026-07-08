@@ -155,12 +155,12 @@ class OptimizationWorker @AssistedInject constructor(
      * Progress updates are throttled to roughly one publish per second, while start/completed/
      * canceled/failed/paused updates bypass throttling to keep terminal states immediate.
      *
-     * @property lastPublishedAtMs Elapsed realtime of the last published notification update.
-     * @property lastPublishedState Last published material notification state for deduplication.
+     * @property publishPolicy Policy holding dedupe/throttle state for publish decisions.
      */
     private inner class ForegroundNotificationUpdater {
-        private var lastPublishedAtMs: Long = 0L
-        private var lastPublishedState: NotificationRenderState? = null
+        private val publishPolicy = ForegroundNotificationPublishPolicy(
+            minUpdateIntervalMs = NOTIFICATION_UPDATE_INTERVAL_MILLIS
+        )
 
         /**
          * Publishes the required initial foreground notification immediately.
@@ -170,7 +170,7 @@ class OptimizationWorker @AssistedInject constructor(
         suspend fun publishStart(workId: String) {
             publish(
                 workId = workId,
-                state = NotificationRenderState(),
+                state = ForegroundNotificationRenderState(),
                 forceUpdate = true,
                 terminalUpdate = false,
                 reason = "start"
@@ -185,7 +185,7 @@ class OptimizationWorker @AssistedInject constructor(
          */
         suspend fun publishProgress(workId: String, progress: OptimizationProgress) {
             val percent = (progress.progress * 100f).toInt().coerceIn(0, 100)
-            val state = NotificationRenderState(
+            val state = ForegroundNotificationRenderState(
                 currentLabel = progress.currentAppPackage.ifBlank { null },
                 progressPercent = if (progress.totalCount > 0) percent else null,
                 progressCurrent = progress.processedCount,
@@ -205,20 +205,19 @@ class OptimizationWorker @AssistedInject constructor(
 
         private suspend fun publish(
             workId: String,
-            state: NotificationRenderState,
+            state: ForegroundNotificationRenderState,
             forceUpdate: Boolean,
             terminalUpdate: Boolean,
             reason: String
         ) {
             val now = SystemClock.elapsedRealtime()
-            val duplicate = lastPublishedState == state
-            if (!forceUpdate && duplicate) {
-                logNotificationEvent("skipped_duplicate", reason, state, now)
-                return
-            }
-
-            if (!forceUpdate && (now - lastPublishedAtMs) < NOTIFICATION_UPDATE_INTERVAL_MILLIS) {
-                logNotificationEvent("skipped_throttled", reason, state, now)
+            val decision = publishPolicy.decide(
+                nowMs = now,
+                state = state,
+                forceUpdate = forceUpdate
+            )
+            if (!decision.shouldPublish) {
+                logNotificationEvent(decision.eventName, reason, state, now)
                 return
             }
 
@@ -234,8 +233,7 @@ class OptimizationWorker @AssistedInject constructor(
                 )
             )
 
-            lastPublishedAtMs = now
-            lastPublishedState = state
+            publishPolicy.markPublished(nowMs = now, state = state)
             val eventName = if (terminalUpdate) "forced_terminal_update" else "published"
             logNotificationEvent(eventName, reason, state, now)
         }
@@ -243,7 +241,7 @@ class OptimizationWorker @AssistedInject constructor(
         private fun logNotificationEvent(
             eventName: String,
             reason: String,
-            state: NotificationRenderState,
+            state: ForegroundNotificationRenderState,
             timestampMs: Long
         ) {
             if (!Log.isLoggable(NOTIFICATION_LOG_TAG, Log.DEBUG)) {
@@ -259,23 +257,6 @@ class OptimizationWorker @AssistedInject constructor(
             )
         }
     }
-
-    /**
-     * Snapshot of material fields used to render and deduplicate notification updates.
-     *
-     * @property currentLabel Optional package name shown in the content text.
-     * @property progressPercent Optional normalized percent [0,100] for determinate progress.
-     * @property progressCurrent Optional processed item count.
-     * @property progressTotal Optional total item count.
-     * @property showStopAction Whether the stop action is shown.
-     */
-    private data class NotificationRenderState(
-        val currentLabel: String? = null,
-        val progressPercent: Int? = null,
-        val progressCurrent: Int? = null,
-        val progressTotal: Int? = null,
-        val showStopAction: Boolean = true
-    )
 
     /**
      * Indicates whether the progress snapshot describes a finished optimization run.
