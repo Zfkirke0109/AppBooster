@@ -153,6 +153,9 @@ class OptimizationWorker @AssistedInject constructor(
      *
      * Progress updates are throttled to roughly one publish per second, while start/completed/
      * canceled/failed/paused updates bypass throttling to keep terminal states immediate.
+     *
+     * @property lastPublishedAtMs Elapsed realtime of the last published notification update.
+     * @property lastPublishedState Last published material notification state for deduplication.
      */
     private inner class ForegroundNotificationUpdater {
         private var lastPublishedAtMs: Long = 0L
@@ -207,7 +210,7 @@ class OptimizationWorker @AssistedInject constructor(
             reason: String
         ) {
             val now = SystemClock.elapsedRealtime()
-            val duplicate = lastPublishedState?.materialKey() == state.materialKey()
+            val duplicate = lastPublishedState == state
             if (!forceUpdate && duplicate) {
                 logNotificationEvent("skipped_duplicate", reason, state, now)
                 return
@@ -271,28 +274,12 @@ class OptimizationWorker @AssistedInject constructor(
         val progressCurrent: Int? = null,
         val progressTotal: Int? = null,
         val showStopAction: Boolean = true
-    ) {
-        private val stableMaterialKey: String = listOf(
-            currentLabel.orEmpty(),
-            progressPercent?.coerceIn(0, 100)?.toString() ?: "null",
-            progressCurrent?.toString() ?: "null",
-            progressTotal?.toString() ?: "null",
-            showStopAction.toString()
-        ).joinToString("|")
-
-        /**
-         * Stable key representing user-visible notification content/material actions.
-         *
-         * @return Key used to skip duplicate updates.
-         */
-        fun materialKey(): String {
-            return stableMaterialKey
-        }
-    }
+    )
 
     /**
      * Indicates whether the progress snapshot describes a finished optimization run.
      *
+     * @receiver Progress snapshot emitted by [AdbRepository.optimizationProgress].
      * @return True when the run ended by completion, cancellation, failure, or pause.
      */
     private fun OptimizationProgress.isTerminalState(): Boolean {
@@ -303,6 +290,7 @@ class OptimizationWorker @AssistedInject constructor(
     /**
      * Resolves the terminal reason string used for forced immediate notification updates.
      *
+     * @receiver Progress snapshot emitted by [AdbRepository.optimizationProgress].
      * @return Terminal reason when the run is finished; otherwise null.
      */
     private fun OptimizationProgress.terminalReason(): String? {
@@ -314,7 +302,7 @@ class OptimizationWorker @AssistedInject constructor(
             OptimizationResult.Canceled -> "canceled"
             OptimizationResult.Failed -> "failed"
             is OptimizationResult.Paused -> "paused"
-            OptimizationResult.None -> null
+            else -> null
         }
     }
 }

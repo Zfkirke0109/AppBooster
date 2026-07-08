@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 object WorkForegroundNotificationHelper {
 
-    private val isChannelEnsured = AtomicBoolean(false)
+    private val channelInitialized = AtomicBoolean(false)
 
     /**
      * Ensures the foreground notification channel exists.
@@ -54,7 +54,7 @@ object WorkForegroundNotificationHelper {
                 manager.createNotificationChannel(channel)
             }
 
-            isChannelEnsured.set(true)
+            channelInitialized.set(true)
         }
     }
 
@@ -188,11 +188,11 @@ object WorkForegroundNotificationHelper {
     private const val NOTIFICATION_ID = 1001
 
     private fun shouldSkipEnsureChannel(): Boolean {
-        return Build.VERSION.SDK_INT < Build.VERSION_CODES.O || isChannelEnsured.get()
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.O || channelInitialized.get()
     }
 
     @VisibleForTesting
     internal fun resetForTesting() {
-        isChannelEnsured.set(false)
+        channelInitialized.set(false)
     }
 }
