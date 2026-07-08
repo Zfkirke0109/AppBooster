@@ -61,10 +61,7 @@ class OptimizationWorker @AssistedInject constructor(
         // Update notification whenever the current package/progress changes.
         val notificationJob: Job = launch {
             repository.optimizationProgress
-                .distinctUntilChangedBy { progress ->
-                    // Avoid spam updates; update when either current app or computed percent changes.
-                    "${progress.currentAppPackage}|${(progress.progress * 100f).toInt()}|${progress.processedCount}|${progress.totalCount}"
-                }
+                .distinctUntilChangedBy { progress -> progress.toNotificationProgressKey() }
                 .collect { progress ->
                     notificationUpdater.publishProgress(
                         workId = id.toString(),
@@ -289,4 +286,18 @@ class OptimizationWorker @AssistedInject constructor(
             else -> null
         }
     }
+}
+
+/**
+ * Stable projection used by `distinctUntilChangedBy` to suppress redundant notification updates.
+ *
+ * Includes terminal/run status so completion/cancel/failure/paused transitions are never dropped
+ * even if package/progress counters stay unchanged on the final emission.
+ *
+ * @receiver Progress snapshot emitted by [AdbRepository.optimizationProgress].
+ * @return Key that changes when material notification fields or terminal state changes.
+ */
+internal fun OptimizationProgress.toNotificationProgressKey(): String {
+    val progressPercent = (progress * 100f).toInt().coerceIn(0, 100)
+    return "$currentAppPackage|$progressPercent|$processedCount|$totalCount|$isRunning|$result"
 }
