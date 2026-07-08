@@ -108,6 +108,7 @@ class OptimizationWorker @AssistedInject constructor(
     companion object {
         const val KEY_OPTIMIZATION_MODE = "optimization_mode"
         const val KEY_FORCE_OPTIMIZE = "force_optimize"
+        // Keep progress updates at ~1/s to stay below Android enqueue shedding thresholds.
         private const val NOTIFICATION_UPDATE_INTERVAL_MILLIS = 1000L
         private const val NOTIFICATION_LOG_TAG = "OptimizationWorkerNotification"
 
@@ -280,6 +281,8 @@ class OptimizationWorker @AssistedInject constructor(
      * Indicates whether the progress snapshot describes a finished optimization run.
      *
      * @receiver Progress snapshot emitted by [AdbRepository.optimizationProgress].
+     * The [OptimizationResult.None] state is treated as non-terminal because it is also used by
+     * startup/idle snapshots when no run has finished yet.
      * @return True when the run ended by completion, cancellation, failure, or pause.
      */
     private fun OptimizationProgress.isTerminalState(): Boolean {

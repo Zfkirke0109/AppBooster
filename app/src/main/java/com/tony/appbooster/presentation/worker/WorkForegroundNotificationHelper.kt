@@ -155,7 +155,7 @@ object WorkForegroundNotificationHelper {
             .setContentTitle(title)
             .setContentText(contentText)
             .setOnlyAlertOnce(true)
-            .setOngoing(showStopAction)
+            .setOngoing(true)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .setContentIntent(contentIntent)
         if (showStopAction) {
