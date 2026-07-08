@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import androidx.annotation.VisibleForTesting
 import androidx.core.app.NotificationCompat
 import androidx.work.ForegroundInfo
 import com.tony.appbooster.R
@@ -23,23 +24,38 @@ import kotlin.math.roundToInt
  */
 object WorkForegroundNotificationHelper {
 
+    @Volatile
+    private var isChannelEnsured = false
+
     /**
      * Ensures the foreground notification channel exists.
      *
      * @param context Context used to register the notification channel.
      */
     fun ensureChannel(context: Context) {
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-        val channel = NotificationChannel(
-            NOTIFICATION_CHANNEL_ID,
-            context.getString(R.string.optimization_notification_channel_name),
-            NotificationManager.IMPORTANCE_LOW
-        ).apply {
-            description = context.getString(R.string.optimization_notification_channel_description)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || isChannelEnsured) {
+            return
         }
 
-        manager.createNotificationChannel(channel)
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        synchronized(this) {
+            if (isChannelEnsured) {
+                return
+            }
+
+            if (manager.getNotificationChannel(NOTIFICATION_CHANNEL_ID) == null) {
+                val channel = NotificationChannel(
+                    NOTIFICATION_CHANNEL_ID,
+                    context.getString(R.string.optimization_notification_channel_name),
+                    NotificationManager.IMPORTANCE_LOW
+                ).apply {
+                    description = context.getString(R.string.optimization_notification_channel_description)
+                }
+                manager.createNotificationChannel(channel)
+            }
+
+            isChannelEnsured = true
+        }
     }
 
     /**
@@ -51,6 +67,7 @@ object WorkForegroundNotificationHelper {
      * @param progressPercent Optional 0..100 progress value.
      * @param progressCurrent Optional current step index (e.g., processed apps).
      * @param progressTotal Optional total steps.
+     * @param showStopAction When true, includes the stop action button.
      * @return [ForegroundInfo] ready to be passed to `setForeground()`.
      */
     fun createForegroundInfo(
@@ -59,7 +76,8 @@ object WorkForegroundNotificationHelper {
         currentLabel: String?,
         progressPercent: Int? = null,
         progressCurrent: Int? = null,
-        progressTotal: Int? = null
+        progressTotal: Int? = null,
+        showStopAction: Boolean = true
     ): ForegroundInfo {
         val notification = buildNotification(
             context = context,
@@ -67,7 +85,8 @@ object WorkForegroundNotificationHelper {
             currentLabel = currentLabel,
             progressPercent = progressPercent,
             progressCurrent = progressCurrent,
-            progressTotal = progressTotal
+            progressTotal = progressTotal,
+            showStopAction = showStopAction
         )
 
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -90,6 +109,7 @@ object WorkForegroundNotificationHelper {
      * @param progressPercent Optional 0..100 progress value.
      * @param progressCurrent Optional current step index.
      * @param progressTotal Optional total steps.
+     * @param showStopAction When true, includes the stop action button.
      */
     fun buildNotification(
         context: Context,
@@ -97,7 +117,8 @@ object WorkForegroundNotificationHelper {
         currentLabel: String?,
         progressPercent: Int? = null,
         progressCurrent: Int? = null,
-        progressTotal: Int? = null
+        progressTotal: Int? = null,
+        showStopAction: Boolean = true
     ): Notification {
         val title = context.getString(R.string.app_name)
 
@@ -134,16 +155,18 @@ object WorkForegroundNotificationHelper {
             .setContentTitle(title)
             .setContentText(contentText)
             .setOnlyAlertOnce(true)
-            .setOngoing(true)
+            .setOngoing(showStopAction)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .setContentIntent(contentIntent)
-            .addAction(
+        if (showStopAction) {
+            builder.addAction(
                 NotificationCompat.Action(
                     0,
                     context.getString(R.string.optimization_notification_stop),
                     stopPendingIntent
                 )
             )
+        }
 
         // Determinate progress bar when we have a usable percentage.
         // Note: Notification progress bars are not shown in all OEM skins, but it's the standard API.
@@ -163,4 +186,9 @@ object WorkForegroundNotificationHelper {
 
     private const val NOTIFICATION_CHANNEL_ID = "optimization"
     private const val NOTIFICATION_ID = 1001
+
+    @VisibleForTesting
+    internal fun resetForTesting() {
+        isChannelEnsured = false
+    }
 }
