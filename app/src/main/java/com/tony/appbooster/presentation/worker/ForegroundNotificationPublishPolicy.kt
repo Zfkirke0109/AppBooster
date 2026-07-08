@@ -8,7 +8,7 @@ package com.tony.appbooster.presentation.worker
 internal class ForegroundNotificationPublishPolicy(
     private val minUpdateIntervalMs: Long
 ) {
-    private var lastPublishedAtMs: Long = 0L
+    private var lastPublishedAtMs: Long = -minUpdateIntervalMs
     private var lastPublishedState: ForegroundNotificationRenderState? = null
 
     /**
@@ -24,24 +24,31 @@ internal class ForegroundNotificationPublishPolicy(
         state: ForegroundNotificationRenderState,
         forceUpdate: Boolean
     ): ForegroundNotificationPublishDecision {
+        if (forceUpdate) {
+            return ForegroundNotificationPublishDecision(shouldPublish = true)
+        }
+
+        if (lastPublishedState == null) {
+            return ForegroundNotificationPublishDecision(shouldPublish = true)
+        }
+
         val duplicate = lastPublishedState == state
-        if (!forceUpdate && duplicate) {
+        if (duplicate) {
             return ForegroundNotificationPublishDecision(
                 shouldPublish = false,
-                eventName = "skipped_duplicate"
+                skippedEventName = "skipped_duplicate"
             )
         }
 
-        if (!forceUpdate && (nowMs - lastPublishedAtMs) < minUpdateIntervalMs) {
+        if ((nowMs - lastPublishedAtMs) < minUpdateIntervalMs) {
             return ForegroundNotificationPublishDecision(
                 shouldPublish = false,
-                eventName = "skipped_throttled"
+                skippedEventName = "skipped_throttled"
             )
         }
 
         return ForegroundNotificationPublishDecision(
-            shouldPublish = true,
-            eventName = "published"
+            shouldPublish = true
         )
     }
 

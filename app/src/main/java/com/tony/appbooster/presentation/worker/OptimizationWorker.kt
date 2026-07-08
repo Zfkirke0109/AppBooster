@@ -214,7 +214,15 @@ class OptimizationWorker @AssistedInject constructor(
                 forceUpdate = forceUpdate
             )
             if (!decision.shouldPublish) {
-                logNotificationEvent(decision.eventName, reason, state, now)
+                val skippedEventName = requireNotNull(decision.skippedEventName) {
+                    "Publish policy returned skip decision without skip reason."
+                }
+                logNotificationEvent(
+                    skippedEventName,
+                    reason,
+                    state,
+                    now
+                )
                 return
             }
 
@@ -297,7 +305,13 @@ class OptimizationWorker @AssistedInject constructor(
  * @receiver Progress snapshot emitted by [AdbRepository.optimizationProgress].
  * @return Key that changes when material notification fields or terminal state changes.
  */
-internal fun OptimizationProgress.toNotificationProgressKey(): String {
-    val progressPercent = (progress * 100f).toInt().coerceIn(0, 100)
-    return "$currentAppPackage|$progressPercent|$processedCount|$totalCount|$isRunning|$result"
+internal fun OptimizationProgress.toNotificationProgressKey(): OptimizationNotificationProgressKey {
+    return OptimizationNotificationProgressKey(
+        currentAppPackage = currentAppPackage,
+        progressPercent = (progress * 100f).toInt().coerceIn(0, 100),
+        processedCount = processedCount,
+        totalCount = totalCount,
+        isRunning = isRunning,
+        result = result
+    )
 }

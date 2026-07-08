@@ -11,6 +11,20 @@ import org.junit.Test
 class ForegroundNotificationPublishPolicyTest {
 
     @Test
+    fun `given first update when not forced then publishes`() {
+        val policy = ForegroundNotificationPublishPolicy(minUpdateIntervalMs = 1000L)
+
+        val decision = policy.decide(
+            nowMs = 10L,
+            state = ForegroundNotificationRenderState(currentLabel = "pkg.first"),
+            forceUpdate = false
+        )
+
+        assertTrue(decision.shouldPublish)
+        assertEquals(null, decision.skippedEventName)
+    }
+
+    @Test
     fun `given duplicate state when not forced then skips as duplicate`() {
         val policy = ForegroundNotificationPublishPolicy(minUpdateIntervalMs = 1000L)
         val state = ForegroundNotificationRenderState(currentLabel = "pkg.one")
@@ -19,7 +33,7 @@ class ForegroundNotificationPublishPolicyTest {
         val decision = policy.decide(nowMs = 3_000L, state = state, forceUpdate = false)
 
         assertFalse(decision.shouldPublish)
-        assertEquals("skipped_duplicate", decision.eventName)
+        assertEquals("skipped_duplicate", decision.skippedEventName)
     }
 
     @Test
@@ -37,7 +51,7 @@ class ForegroundNotificationPublishPolicyTest {
         )
 
         assertFalse(decision.shouldPublish)
-        assertEquals("skipped_throttled", decision.eventName)
+        assertEquals("skipped_throttled", decision.skippedEventName)
     }
 
     @Test
@@ -52,7 +66,7 @@ class ForegroundNotificationPublishPolicyTest {
         val decision = policy.decide(nowMs = 2_100L, state = state, forceUpdate = true)
 
         assertTrue(decision.shouldPublish)
-        assertEquals("published", decision.eventName)
+        assertEquals(null, decision.skippedEventName)
     }
 
     @Test
@@ -70,6 +84,6 @@ class ForegroundNotificationPublishPolicyTest {
         )
 
         assertTrue(decision.shouldPublish)
-        assertEquals("published", decision.eventName)
+        assertEquals(null, decision.skippedEventName)
     }
 }
