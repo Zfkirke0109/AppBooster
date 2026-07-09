@@ -71,11 +71,29 @@ internal fun OptimizationTypeSelector(
         )
 
         OptimizationTypeCard(
-            title = stringResource(R.string.settings_opt_full_title),
-            description = stringResource(R.string.settings_opt_full_description),
+            title = stringResource(R.string.settings_opt_full_dex2oat_title),
+            description = stringResource(R.string.settings_opt_full_dex2oat_description),
             icon = Icons.Outlined.Bolt,
-            isSelected = selectedType == AppOptimizationType.FULL_OPTIMIZATION,
-            onClick = { onTypeSelected(AppOptimizationType.FULL_OPTIMIZATION) }
+            isSelected = selectedType == AppOptimizationType.FULL_DEX2OAT_SPEED,
+            onClick = { onTypeSelected(AppOptimizationType.FULL_DEX2OAT_SPEED) }
+        )
+
+        OptimizationTypeCard(
+            title = stringResource(R.string.settings_opt_advanced_full_title),
+            description = stringResource(R.string.settings_opt_advanced_full_description),
+            icon = Icons.Outlined.Bolt,
+            isSelected = selectedType == AppOptimizationType.ADVANCED_FULL_COMPILE,
+            enabled = false,
+            disabledReason = stringResource(R.string.settings_opt_advanced_full_disabled_reason),
+            onClick = { onTypeSelected(AppOptimizationType.ADVANCED_FULL_COMPILE) }
+        )
+
+        OptimizationTypeCard(
+            title = stringResource(R.string.settings_opt_heavy_title),
+            description = stringResource(R.string.settings_opt_heavy_description),
+            icon = Icons.Outlined.Bolt,
+            isSelected = selectedType == AppOptimizationType.HEAVY_APPS_SPEED,
+            onClick = { onTypeSelected(AppOptimizationType.HEAVY_APPS_SPEED) }
         )
     }
 }
@@ -97,6 +115,8 @@ private fun OptimizationTypeCard(
     description: String,
     icon: ImageVector,
     isSelected: Boolean,
+    enabled: Boolean = true,
+    disabledReason: String? = null,
     onClick: () -> Unit
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -156,6 +176,7 @@ private fun OptimizationTypeCard(
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
+                enabled = enabled,
                 onClick = onClick
             )
             .semantics { contentDescription = selectionContentDescription },
@@ -203,10 +224,12 @@ private fun OptimizationTypeCard(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = description,
+                    text = disabledReason ?: description,
                     style = MaterialTheme.typography.bodySmall,
                     color = if (isSelected) {
                         MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                    } else if (!enabled) {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     }

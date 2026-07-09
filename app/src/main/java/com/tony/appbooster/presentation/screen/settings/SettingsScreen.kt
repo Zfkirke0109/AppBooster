@@ -379,7 +379,7 @@ fun SettingsScreenContentLightPreview() {
 @Composable
 fun SettingsScreenContentDarkPreview() {
     val uiState = SettingsUiState(
-        appOptimizationType = AppOptimizationType.FULL_OPTIMIZATION,
+        appOptimizationType = AppOptimizationType.HEAVY_APPS_SPEED,
         appVersionName = "1.0.0",
         appVersionChannel = "Beta",
         shizukuState = ShizukuState.NotRunning

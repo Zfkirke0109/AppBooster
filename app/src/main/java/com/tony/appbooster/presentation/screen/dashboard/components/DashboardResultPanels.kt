@@ -206,6 +206,10 @@ fun HeroResultPanel(
         // ── Stats row (Completed and Canceled only) ─────────────────────
         val showStats = when (status) {
             is HeroCardStatus.Completed -> status.processedCount > 0 || status.skippedCount > 0
+            is HeroCardStatus.CompletedWithIssues -> status.processedCount > 0 ||
+                status.skippedCount > 0 ||
+                status.failedCount > 0 ||
+                status.unverifiedCount > 0
             is HeroCardStatus.Canceled -> status.processedCount > 0 || status.skippedCount > 0
             is HeroCardStatus.Failed -> status.processedCount > 0 || status.skippedCount > 0 || status.totalCount > 0
             is HeroCardStatus.Paused -> status.processedCount > 0 || status.skippedCount > 0 || status.totalCount > 0
@@ -219,6 +223,15 @@ fun HeroResultPanel(
                     needsOptimizationCount = 0,
                     optimizedCount = status.processedCount + (status.skippedCount - status.noProfileCount).coerceAtLeast(0),
                     noProfileCount = status.noProfileCount,
+                    showNoProfile = isSpeedProfile
+                )
+            } else if (status is HeroCardStatus.CompletedWithIssues) {
+                OptimizationStatsRow(
+                    needsOptimizationCount = 0,
+                    optimizedCount = status.processedCount + (status.skippedCount - status.noProfileCount).coerceAtLeast(0),
+                    noProfileCount = status.noProfileCount,
+                    failedCount = status.failedCount,
+                    unverifiedCount = status.unverifiedCount,
                     showNoProfile = isSpeedProfile
                 )
             } else if (status is HeroCardStatus.Canceled) {
@@ -370,6 +383,23 @@ private fun rememberHeroResultConfig(status: HeroCardStatus): HeroResultConfig {
             ),
             iconScaleTarget = 1.06f,
             pulseMs = 800,
+            showGlow = false,
+            showRunAgain = true
+        )
+        is HeroCardStatus.CompletedWithIssues -> HeroResultConfig(
+            icon = Icons.Rounded.Error,
+            containerColor = colorScheme.errorContainer,
+            iconTint = colorScheme.onErrorContainer,
+            glowColor = Color.Transparent,
+            title = stringResource(R.string.dashboard_result_completed_issues_title),
+            subtitle = stringResource(
+                R.string.dashboard_result_completed_issues_count,
+                status.processedCount,
+                status.failedCount,
+                status.unverifiedCount
+            ),
+            iconScaleTarget = 1.04f,
+            pulseMs = 900,
             showGlow = false,
             showRunAgain = true
         )

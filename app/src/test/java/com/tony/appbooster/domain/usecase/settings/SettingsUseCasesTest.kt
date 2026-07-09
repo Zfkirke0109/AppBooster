@@ -65,14 +65,14 @@ class SettingsUseCasesTest {
 
     @Test
     fun `given valid type when SetAppOptimizationTypeUseCase invoke then delegates to repository`() = runTest {
-        coEvery { repository.setAppOptimizationType(AppOptimizationType.FULL_OPTIMIZATION) } returns
+        coEvery { repository.setAppOptimizationType(AppOptimizationType.HEAVY_APPS_SPEED) } returns
             Resource.Success(Unit)
 
         val useCase = SetAppOptimizationTypeUseCase(repository)
-        val result = useCase(AppOptimizationType.FULL_OPTIMIZATION)
+        val result = useCase(AppOptimizationType.HEAVY_APPS_SPEED)
 
         assertTrue(result is Resource.Success)
-        coVerify(exactly = 1) { repository.setAppOptimizationType(AppOptimizationType.FULL_OPTIMIZATION) }
+        coVerify(exactly = 1) { repository.setAppOptimizationType(AppOptimizationType.HEAVY_APPS_SPEED) }
     }
 
     @Test

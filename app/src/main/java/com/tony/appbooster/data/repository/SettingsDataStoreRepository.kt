@@ -52,10 +52,7 @@ class SettingsDataStoreRepository @Inject constructor(
             .map { preferences ->
                 val rawValue = preferences[Keys.APP_OPTIMIZATION_TYPE]
                 val type = rawValue
-                    ?.let { stored ->
-                        runCatching { AppOptimizationType.valueOf(stored) }
-                            .getOrDefault(AppOptimizationType.SPEED_PROFILE)
-                    }
+                    ?.let(AppOptimizationType::fromStoredValue)
                     ?: AppOptimizationType.SPEED_PROFILE
 
                 Resource.Success(type) as Resource<AppOptimizationType>
@@ -111,7 +108,7 @@ class SettingsDataStoreRepository @Inject constructor(
     ): Resource<Unit> {
         return try {
             applicationContext.settingsDataStore.edit { preferences ->
-                preferences[Keys.APP_OPTIMIZATION_TYPE] = type.name
+                preferences[Keys.APP_OPTIMIZATION_TYPE] = type.value
             }
             Resource.Success(Unit)
         } catch (throwable: Throwable) {

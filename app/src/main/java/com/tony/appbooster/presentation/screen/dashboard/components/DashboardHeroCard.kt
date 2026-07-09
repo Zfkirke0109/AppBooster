@@ -127,6 +127,9 @@ fun DashboardHeroCard(
                 result is OptimizationResult.Completed
                     && !model.isCurrentResultDismissed -> HeroPhase.RESULT_COMPLETED
 
+                result is OptimizationResult.CompletedWithIssues
+                    && !model.isCurrentResultDismissed -> HeroPhase.RESULT_COMPLETED_WITH_ISSUES
+
                 result is OptimizationResult.Canceled
                     && !model.isCurrentResultDismissed -> HeroPhase.RESULT_CANCELED
 
@@ -206,8 +209,25 @@ fun DashboardHeroCard(
                     HeroPhase.RESULT_COMPLETED -> {
                         HeroResultPanel(
                             status = HeroCardStatus.Completed(
-                                processedCount = model.optimizationProgress.processedCount,
+                                processedCount = model.optimizationProgress.optimizedSucceededCount,
                                 skippedCount = model.optimizationProgress.skippedCount,
+                                totalCount = model.optimizationProgress.totalCount,
+                                noProfileCount = model.optimizationAnalysis.appsWithNoProfile,
+                                optimizationMode = model.optimizationMode
+                            ),
+                            onDismiss = onDismissResult,
+                            onRunAgain = onStartOptimization,
+                            onForceOptimize = onForceOptimize
+                        )
+                    }
+
+                    HeroPhase.RESULT_COMPLETED_WITH_ISSUES -> {
+                        HeroResultPanel(
+                            status = HeroCardStatus.CompletedWithIssues(
+                                processedCount = model.optimizationProgress.optimizedSucceededCount,
+                                skippedCount = model.optimizationProgress.skippedCount,
+                                failedCount = model.optimizationProgress.failedOrRefusedCount,
+                                unverifiedCount = model.optimizationProgress.unverifiedCount,
                                 totalCount = model.optimizationProgress.totalCount,
                                 noProfileCount = model.optimizationAnalysis.appsWithNoProfile,
                                 optimizationMode = model.optimizationMode
@@ -221,7 +241,7 @@ fun DashboardHeroCard(
                     HeroPhase.RESULT_CANCELED -> {
                         HeroResultPanel(
                             status = HeroCardStatus.Canceled(
-                                processedCount = model.optimizationProgress.processedCount,
+                                processedCount = model.optimizationProgress.optimizedSucceededCount,
                                 skippedCount = model.optimizationProgress.skippedCount,
                                 totalCount = model.optimizationProgress.totalCount,
                                 noProfileCount = model.optimizationAnalysis.appsWithNoProfile,
@@ -236,7 +256,7 @@ fun DashboardHeroCard(
                     HeroPhase.RESULT_FAILED -> {
                         HeroResultPanel(
                             status = HeroCardStatus.Failed(
-                                processedCount = model.optimizationProgress.processedCount,
+                                processedCount = model.optimizationProgress.optimizedSucceededCount,
                                 skippedCount = model.optimizationProgress.skippedCount,
                                 totalCount = model.optimizationProgress.totalCount,
                                 noProfileCount = model.optimizationAnalysis.appsWithNoProfile,
@@ -253,7 +273,7 @@ fun DashboardHeroCard(
                         HeroResultPanel(
                             status = HeroCardStatus.Paused(
                                 reason = paused.reason,
-                                processedCount = model.optimizationProgress.processedCount,
+                                processedCount = model.optimizationProgress.optimizedSucceededCount,
                                 skippedCount = model.optimizationProgress.skippedCount,
                                 totalCount = model.optimizationProgress.totalCount,
                                 noProfileCount = model.optimizationAnalysis.appsWithNoProfile,
@@ -327,9 +347,21 @@ private fun ReadyContent(
             Icons.Rounded.Speed
         )
 
-        AppOptimizationType.FULL_OPTIMIZATION -> Triple(
-            stringResource(R.string.dashboard_ready_full_optimization_title),
-            stringResource(R.string.dashboard_ready_full_optimization_description),
+        AppOptimizationType.FULL_DEX2OAT_SPEED -> Triple(
+            stringResource(R.string.dashboard_ready_full_dex2oat_title),
+            stringResource(R.string.dashboard_ready_full_dex2oat_description),
+            Icons.Rounded.RocketLaunch
+        )
+
+        AppOptimizationType.ADVANCED_FULL_COMPILE -> Triple(
+            stringResource(R.string.dashboard_ready_advanced_full_title),
+            stringResource(R.string.dashboard_ready_advanced_full_description),
+            Icons.Rounded.RocketLaunch
+        )
+
+        AppOptimizationType.HEAVY_APPS_SPEED -> Triple(
+            stringResource(R.string.dashboard_ready_heavy_apps_title),
+            stringResource(R.string.dashboard_ready_heavy_apps_description),
             Icons.Rounded.RocketLaunch
         )
     }
@@ -467,6 +499,7 @@ private enum class HeroPhase {
     SCANNING,
     OPTIMIZING,
     RESULT_COMPLETED,
+    RESULT_COMPLETED_WITH_ISSUES,
     RESULT_CANCELED,
     RESULT_FAILED,
     RESULT_PAUSED,

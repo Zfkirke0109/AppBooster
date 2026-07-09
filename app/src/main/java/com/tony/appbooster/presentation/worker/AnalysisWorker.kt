@@ -103,11 +103,7 @@ class AnalysisWorker @AssistedInject constructor(
     }
 
     private fun parseOptimizationMode(value: String): AppOptimizationType? {
-        return when (value) {
-            AppOptimizationType.SPEED_PROFILE.value -> AppOptimizationType.SPEED_PROFILE
-            AppOptimizationType.FULL_OPTIMIZATION.value -> AppOptimizationType.FULL_OPTIMIZATION
-            else -> null
-        }
+        return AppOptimizationType.fromStoredValue(value)
     }
 
     companion object {

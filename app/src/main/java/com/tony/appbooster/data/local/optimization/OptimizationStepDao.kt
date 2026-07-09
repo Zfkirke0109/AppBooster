@@ -16,7 +16,7 @@ interface OptimizationStepDao {
         WHERE mode = :mode AND forceOptimize = :forceOptimize
         GROUP BY runId
         HAVING SUM(CASE WHEN status IN ('PENDING', 'RUNNING') THEN 1 ELSE 0 END) > 0
-           AND SUM(CASE WHEN status IN ('FAILED', 'CANCELED') THEN 1 ELSE 0 END) = 0
+           AND SUM(CASE WHEN status IN ('FAILED', 'UNVERIFIED', 'CANCELED') THEN 1 ELSE 0 END) = 0
         ORDER BY MAX(createdAtMs) DESC
         LIMIT 1
         """
@@ -100,6 +100,27 @@ interface OptimizationStepDao {
         exitCode: Int?,
         stdout: String?,
         stderr: String?,
+        updatedAtMs: Long
+    )
+
+    @Query(
+        """
+        UPDATE optimization_steps
+        SET status = 'UNVERIFIED',
+            afterFilter = :afterFilter,
+            exitCode = :exitCode,
+            stdout = :stdout,
+            stderr = :stderr,
+            updatedAtMs = :updatedAtMs
+        WHERE id = :id
+        """
+    )
+    suspend fun markUnverified(
+        id: Long,
+        afterFilter: String?,
+        exitCode: Int,
+        stdout: String,
+        stderr: String,
         updatedAtMs: Long
     )
 

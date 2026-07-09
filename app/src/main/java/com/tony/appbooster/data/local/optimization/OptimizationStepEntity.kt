@@ -37,5 +37,6 @@ object OptimizationStepStatus {
     const val RUNNING = "RUNNING"
     const val SUCCEEDED = "SUCCEEDED"
     const val FAILED = "FAILED"
+    const val UNVERIFIED = "UNVERIFIED"
     const val CANCELED = "CANCELED"
 }

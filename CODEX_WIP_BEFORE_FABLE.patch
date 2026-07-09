@@ -1,0 +1,1540 @@
+diff --git a/app/src/main/java/com/tony/appbooster/data/local/optimization/OptimizationStepDao.kt b/app/src/main/java/com/tony/appbooster/data/local/optimization/OptimizationStepDao.kt
+index 1c614da..9a879a0 100644
+--- a/app/src/main/java/com/tony/appbooster/data/local/optimization/OptimizationStepDao.kt
++++ b/app/src/main/java/com/tony/appbooster/data/local/optimization/OptimizationStepDao.kt
+@@ -16,7 +16,7 @@ interface OptimizationStepDao {
+         WHERE mode = :mode AND forceOptimize = :forceOptimize
+         GROUP BY runId
+         HAVING SUM(CASE WHEN status IN ('PENDING', 'RUNNING') THEN 1 ELSE 0 END) > 0
+-           AND SUM(CASE WHEN status IN ('FAILED', 'CANCELED') THEN 1 ELSE 0 END) = 0
++           AND SUM(CASE WHEN status IN ('FAILED', 'UNVERIFIED', 'CANCELED') THEN 1 ELSE 0 END) = 0
+         ORDER BY MAX(createdAtMs) DESC
+         LIMIT 1
+         """
+@@ -103,6 +103,27 @@ interface OptimizationStepDao {
+         updatedAtMs: Long
+     )
+ 
++    @Query(
++        """
++        UPDATE optimization_steps
++        SET status = 'UNVERIFIED',
++            afterFilter = :afterFilter,
++            exitCode = :exitCode,
++            stdout = :stdout,
++            stderr = :stderr,
++            updatedAtMs = :updatedAtMs
++        WHERE id = :id
++        """
++    )
++    suspend fun markUnverified(
++        id: Long,
++        afterFilter: String?,
++        exitCode: Int,
++        stdout: String,
++        stderr: String,
++        updatedAtMs: Long
++    )
++
+     @Query(
+         """
+         UPDATE optimization_steps
+diff --git a/app/src/main/java/com/tony/appbooster/data/local/optimization/OptimizationStepEntity.kt b/app/src/main/java/com/tony/appbooster/data/local/optimization/OptimizationStepEntity.kt
+index 038d2e8..93bb68e 100644
+--- a/app/src/main/java/com/tony/appbooster/data/local/optimization/OptimizationStepEntity.kt
++++ b/app/src/main/java/com/tony/appbooster/data/local/optimization/OptimizationStepEntity.kt
+@@ -37,5 +37,6 @@ object OptimizationStepStatus {
+     const val RUNNING = "RUNNING"
+     const val SUCCEEDED = "SUCCEEDED"
+     const val FAILED = "FAILED"
++    const val UNVERIFIED = "UNVERIFIED"
+     const val CANCELED = "CANCELED"
+ }
+diff --git a/app/src/main/java/com/tony/appbooster/data/repository/AdbRepositoryImpl.kt b/app/src/main/java/com/tony/appbooster/data/repository/AdbRepositoryImpl.kt
+index 34ef44a..fb0af49 100644
+--- a/app/src/main/java/com/tony/appbooster/data/repository/AdbRepositoryImpl.kt
++++ b/app/src/main/java/com/tony/appbooster/data/repository/AdbRepositoryImpl.kt
+@@ -3,7 +3,10 @@ package com.tony.appbooster.data.repository
+ import com.tony.appbooster.data.local.optimization.OptimizationStepDao
+ import com.tony.appbooster.data.local.optimization.OptimizationStepEntity
+ import com.tony.appbooster.data.local.optimization.OptimizationStepStatus
++import com.tony.appbooster.data.util.CompileModeSupportParser
++import com.tony.appbooster.data.util.CompileModeSupportSnapshot
+ import com.tony.appbooster.data.util.CompilationInfoResolver
++import com.tony.appbooster.data.util.DexoptStatusParser
+ import com.tony.appbooster.data.util.OptimizationLogger
+ import com.tony.appbooster.data.util.PackageListQueryService
+ import com.tony.appbooster.domain.client.AdbShellDataSource
+@@ -22,6 +25,7 @@ import com.tony.appbooster.domain.model.common.ShellCommandSpec
+ import com.tony.appbooster.domain.model.common.requireSuccess
+ import com.tony.appbooster.domain.model.device.blockingSummary
+ import com.tony.appbooster.domain.model.settings.AppOptimizationType
++import com.tony.appbooster.domain.model.settings.OptimizationTargetScope
+ import com.tony.appbooster.domain.repository.AdbConnectionState
+ import com.tony.appbooster.domain.repository.AdbRepository
+ import com.tony.appbooster.domain.repository.DeviceGuardRepository
+@@ -206,7 +210,8 @@ class AdbRepositoryImpl @Inject constructor(
+         mode: AppOptimizationType,
+         forceOptimize: Boolean
+     ): Resource<Unit> {
+-        val compileMode = mode.value
++        val compileMode = mode.requestedCompileMode
++        val modeKey = mode.value
+         return runCatching {
+             resetForNewRun()
+             val requestedRunId = System.currentTimeMillis()
+@@ -217,12 +222,14 @@ class AdbRepositoryImpl @Inject constructor(
+             )
+             val forceLabel = if (forceOptimize) " (Force)" else ""
+             logger.addLogEntry(LogEntryType.START, messageKey = LogMessageKey.STARTING_OPTIMIZATION,
+-                detail = "Mode: $compileMode$forceLabel")
++                detail = "Mode: ${mode.displayName} ($compileMode)$forceLabel")
+ 
+             ensureDeviceGuardAllowsOptimization()
++            val compileSupport = resolveCompileSupportIfNeeded(mode)
++            validateCompileSupport(mode, compileSupport)
+ 
+-            val plan = findResumableOptimizationPlan(compileMode, forceOptimize)
+-                ?: createOptimizationPlan(mode, forceOptimize, compileMode)
++            val plan = findResumableOptimizationPlan(modeKey, forceOptimize)
++                ?: createOptimizationPlan(mode, forceOptimize, modeKey)
+                 ?: run {
+                     if (_optimizationProgress.value.isRunning) {
+                         _optimizationProgress.value = _optimizationProgress.value.copy(
+@@ -245,7 +252,9 @@ class AdbRepositoryImpl @Inject constructor(
+                 result = OptimizationResult.None,
+                 totalCount = plan.totalCount,
+                 skippedCount = plan.skippedCount,
++                alreadyOptimizedCount = plan.skippedCount,
+                 processedCount = plan.processedCount,
++                optimizedSucceededCount = plan.processedCount,
+                 progress = if (plan.totalCount > 0) {
+                     plan.processedCount.toFloat() / plan.totalCount.toFloat()
+                 } else {
+@@ -255,14 +264,14 @@ class AdbRepositoryImpl @Inject constructor(
+ 
+             logOptimizationStart(plan.totalCount, plan.skippedCount, compileMode)
+ 
+-            compilePackages(plan, compileMode)
++            val summary = compilePackages(plan, mode, compileSupport)
+ 
+             // Guard: never overwrite a cancellation with "Completed"
+             if (wasCancelled()) return@runCatching
+ 
+             finaliseCompletion(
+                 totalInstalled = plan.totalCount + plan.skippedCount,
+-                optimisedCount = plan.totalCount,
++                summary = summary,
+                 skippedCount = plan.skippedCount,
+                 mode = mode
+             )
+@@ -333,6 +342,8 @@ class AdbRepositoryImpl @Inject constructor(
+ 
+         _optimizationAnalysis.value = _optimizationAnalysis.value.copy(isScanning = true)
+         logger.addLogEntry(LogEntryType.START, messageKey = LogMessageKey.STARTING_ANALYSIS)
++        val compileSupport = resolveCompileSupportIfNeeded(mode)
++        validateCompileSupport(mode, compileSupport)
+ 
+         val allPackages = packageQuery.queryInstalledPackages()
+         if (allPackages.isEmpty()) {
+@@ -443,6 +454,63 @@ class AdbRepositoryImpl @Inject constructor(
+         }
+     }
+ 
++    private suspend fun resolveCompileSupportIfNeeded(
++        mode: AppOptimizationType
++    ): CompileModeSupportSnapshot? {
++        if (!mode.requiresRuntimeModeSupportCheck && !mode.useFullDexoptScope) return null
++
++        val support = queryCompileModeSupport()
++        val supportLog = listOf("speed-profile", "speed", "everything")
++            .joinToString("\n") { candidate ->
++                val status = if (candidate in support.supportedFilters) "supported" else "unsupported"
++                "$candidate: $status"
++            }
++        logger.addLog("Compile mode support:\n$supportLog")
++        logger.addLogEntry(LogEntryType.INFO, "Compile mode support", detail = supportLog)
++        return support
++    }
++
++    private suspend fun queryCompileModeSupport(): CompileModeSupportSnapshot {
++        val compileHelp = shellDataSource.executeCommandDetailed(ShellCommandSpec.PackageCompileHelp)
++            .getOrNull()
++
++        if (compileHelp?.isSuccess == true) {
++            return CompileModeSupportParser.parse(compileHelp.stdout)
++        }
++
++        val packageHelp = shellDataSource.executeCommandDetailed(ShellCommandSpec.PackageHelp)
++            .getOrThrow()
++            .requireSuccess(ShellCommandSpec.PackageHelp.displayCommand)
++
++        return CompileModeSupportParser.parse(packageHelp.stdout)
++    }
++
++    private fun validateCompileSupport(
++        mode: AppOptimizationType,
++        support: CompileModeSupportSnapshot?
++    ) {
++        if (support == null) return
++
++        val requestedMode = mode.requestedCompileMode
++        val modeSupport = support.supportFor(requestedMode)
++        if (!modeSupport.isSupported) {
++            throw IllegalStateException(
++                if (mode == AppOptimizationType.ADVANCED_FULL_COMPILE) {
++                    "Advanced Full Compile is not supported on this Android build. " +
++                        "Available filters: ${support.availableFiltersLabel()}."
++                } else {
++                    modeSupport.reason ?: "Compiler filter $requestedMode is not supported."
++                }
++            )
++        }
++
++        if (mode.useFullDexoptScope && !support.supportsFullScope) {
++            throw IllegalStateException(
++                "${mode.displayName} requires package compile --full, but this Android build did not advertise --full."
++            )
++        }
++    }
++
+     private fun resourceErrorMessage(error: ResourceError): String {
+         return when (error) {
+             is ResourceError.LogicError -> error.errorMessage
+@@ -478,7 +546,7 @@ class AdbRepositoryImpl @Inject constructor(
+     private suspend fun createOptimizationPlan(
+         mode: AppOptimizationType,
+         forceOptimize: Boolean,
+-        compileMode: String
++        modeKey: String
+     ): OptimizationRunPlan? {
+         val allPackages = packageQuery.queryInstalledPackages()
+         if (allPackages.isEmpty()) {
+@@ -524,7 +592,7 @@ class AdbRepositoryImpl @Inject constructor(
+                 totalSteps = total,
+                 skippedCount = skippedCount,
+                 packageName = packageName,
+-                mode = compileMode,
++                mode = modeKey,
+                 forceOptimize = forceOptimize,
+                 createdAtMs = now,
+                 updatedAtMs = now
+@@ -546,16 +614,19 @@ class AdbRepositoryImpl @Inject constructor(
+         mode: AppOptimizationType,
+         allPackages: List<String>
+     ): List<String> {
+-        if (mode != AppOptimizationType.FULL_OPTIMIZATION) return allPackages
+-
+-        val selectedPackages = when (val result = settingsRepository.getHeavyAppPackages()) {
+-            is Resource.Success -> result.data
+-            is Resource.Error -> throw IllegalStateException(resourceErrorMessage(result.data))
++        return when (mode.targetScope) {
++            OptimizationTargetScope.AllEligible -> allPackages
++            OptimizationTargetScope.SelectedHeavyApps -> {
++                val selectedPackages = when (val result = settingsRepository.getHeavyAppPackages()) {
++                    is Resource.Success -> result.data
++                    is Resource.Error -> throw IllegalStateException(resourceErrorMessage(result.data))
++                }
++                val filtered = allPackages.filter { it in selectedPackages }
++                logger.addLog("Gaming/Heavy mode target packages: ${filtered.size} selected.")
++                logger.addLogEntry(LogEntryType.INFO, "Gaming/Heavy targets", detail = "${filtered.size} apps")
++                filtered
++            }
+         }
+-        val filtered = allPackages.filter { it in selectedPackages }
+-        logger.addLog("Gaming/Heavy mode target packages: ${filtered.size} selected.")
+-        logger.addLogEntry(LogEntryType.INFO, "Gaming/Heavy targets", detail = "${filtered.size} apps")
+-        return filtered
+     }
+ 
+     /**
+@@ -604,6 +675,7 @@ class AdbRepositoryImpl @Inject constructor(
+             isRunning = false,
+             result = OptimizationResult.Completed,
+             skippedCount = skippedCount,
++            alreadyOptimizedCount = skippedCount,
+             progress = 1f
+         )
+     }
+@@ -632,13 +704,26 @@ class AdbRepositoryImpl @Inject constructor(
+      */
+     private suspend fun compilePackages(
+         plan: OptimizationRunPlan,
+-        compileMode: String
+-    ) {
++        mode: AppOptimizationType,
++        compileSupport: CompileModeSupportSnapshot?
++    ): CompileRunSummary {
++        val compileMode = mode.requestedCompileMode
+         val failedPackages = mutableListOf<String>()
+-
+-        plan.steps.forEach { step ->
+-            if (step.status == OptimizationStepStatus.SUCCEEDED) return@forEach
+-            if (checkCancelled(plan.runId, _optimizationProgress.value.processedCount)) return
++        var optimizedCount = plan.processedCount
++        var failedCount = 0
++        var unverifiedCount = 0
++        var processedCount = plan.processedCount
++
++        for (step in plan.steps) {
++            if (step.status == OptimizationStepStatus.SUCCEEDED) continue
++            if (checkCancelled(plan.runId, processedCount)) {
++                return CompileRunSummary(
++                    processedCount = processedCount,
++                    optimizedCount = optimizedCount,
++                    failedCount = failedCount,
++                    unverifiedCount = unverifiedCount
++                )
++            }
+ 
+             val packageName = step.packageName
+             _optimizationProgress.value = _optimizationProgress.value.copy(
+@@ -654,45 +739,74 @@ class AdbRepositoryImpl @Inject constructor(
+             val command = ShellCommandSpec.PackageCompile(
+                 packageName = packageName,
+                 mode = compileMode,
+-                force = true
++                force = true,
++                full = mode.useFullDexoptScope,
++                verbose = compileSupport?.supportsVerboseCompile == true
+             )
+             logger.addLog("> ${command.displayCommand}")
+ 
+-            val commandResult = shellDataSource.executeCommandDetailed(command)
++            val commandAttempt = shellDataSource.executeCommandDetailed(command)
+                 .mapCatching { it.requireSuccess(command.displayCommand) }
+-                .getOrElse { throwable ->
+-                    recordStepFailure(step.id, packageName, throwable)
+-                    failedPackages += packageName
+-                    return@forEach
+-                }
++            if (commandAttempt.isFailure) {
++                val throwable = commandAttempt.exceptionOrNull()
++                    ?: IllegalStateException("Compile command failed")
++                recordStepFailure(step.id, packageName, throwable)
++                failedPackages += packageName
++                failedCount++
++                processedCount++
++                updateCompileProgress(plan, processedCount, optimizedCount, failedCount, unverifiedCount)
++                continue
++            }
++            val commandResult = commandAttempt.getOrThrow()
+ 
+-            logger.addLog("Success: optimized $packageName")
+-            logger.addLogEntry(LogEntryType.SUCCESS, messageKey = LogMessageKey.OPTIMIZED, packageName = packageName)
+             compilationResolver.resetCaches()
+-            val afterFilter = compilationResolver
+-                .queryPackageCompilationInfo(packageName, compileMode)
+-                .compilerFilter ?: compileMode
+-            optimizationStepDao.markSucceeded(
+-                id = step.id,
+-                afterFilter = afterFilter,
+-                exitCode = commandResult.exitCode,
+-                stdout = commandResult.stdout,
+-                stderr = commandResult.stderr,
+-                updatedAtMs = System.currentTimeMillis()
+-            )
+-            compilationResolver.markOptimized(packageName)
++            val verification = verifyPackageCompile(packageName, mode, commandResult)
++            if (verification.verified) {
++                logger.addLog("Verified: optimized $packageName (${verification.filter ?: compileMode})")
++                logger.addLogEntry(LogEntryType.SUCCESS, messageKey = LogMessageKey.OPTIMIZED, packageName = packageName,
++                    detail = verification.filter)
++                optimizationStepDao.markSucceeded(
++                    id = step.id,
++                    afterFilter = verification.filter,
++                    exitCode = commandResult.exitCode,
++                    stdout = commandResult.stdout,
++                    stderr = commandResult.stderr,
++                    updatedAtMs = System.currentTimeMillis()
++                )
++                compilationResolver.markOptimized(packageName)
++                optimizedCount++
++            } else {
++                val reason = verification.reason
++                logger.addLog("Unverified: $packageName - $reason")
++                logger.addLogEntry(LogEntryType.ERROR, "Unverified package",
++                    packageName = packageName,
++                    detail = reason)
++                optimizationStepDao.markUnverified(
++                    id = step.id,
++                    afterFilter = verification.filter,
++                    exitCode = commandResult.exitCode,
++                    stdout = commandResult.stdout,
++                    stderr = commandResult.stderr.ifBlank { reason },
++                    updatedAtMs = System.currentTimeMillis()
++                )
++                unverifiedCount++
++            }
+             val trimmed = commandResult.stdout.trim()
+             if (trimmed.isNotBlank() && !trimmed.equals("Success", ignoreCase = true)) {
+                 logger.addLog(trimmed)
+             }
+ 
+-            val newCount = _optimizationProgress.value.processedCount + 1
+-            _optimizationProgress.value = _optimizationProgress.value.copy(
+-                processedCount = newCount,
+-                progress = newCount.toFloat() / plan.totalCount.toFloat()
+-            )
++            processedCount++
++            updateCompileProgress(plan, processedCount, optimizedCount, failedCount, unverifiedCount)
+ 
+-            if (checkCancelled(plan.runId, newCount)) return
++            if (checkCancelled(plan.runId, processedCount)) {
++                return CompileRunSummary(
++                    processedCount = processedCount,
++                    optimizedCount = optimizedCount,
++                    failedCount = failedCount,
++                    unverifiedCount = unverifiedCount
++                )
++            }
+         }
+ 
+         if (failedPackages.isNotEmpty()) {
+@@ -704,6 +818,79 @@ class AdbRepositoryImpl @Inject constructor(
+             logger.addLogEntry(LogEntryType.ERROR, messageKey = LogMessageKey.OPTIMIZATION_FAILED_APP,
+                 detail = "$failedCount app(s) skipped due to errors: $namesSummary")
+         }
++
++        return CompileRunSummary(
++            processedCount = processedCount,
++            optimizedCount = optimizedCount,
++            failedCount = failedCount,
++            unverifiedCount = unverifiedCount
++        )
++    }
++
++    private fun updateCompileProgress(
++        plan: OptimizationRunPlan,
++        processedCount: Int,
++        optimizedCount: Int,
++        failedCount: Int,
++        unverifiedCount: Int
++    ) {
++        _optimizationProgress.value = _optimizationProgress.value.copy(
++            processedCount = processedCount,
++            optimizedSucceededCount = optimizedCount,
++            failedOrRefusedCount = failedCount,
++            unverifiedCount = unverifiedCount,
++            progress = processedCount.toFloat() / plan.totalCount.toFloat()
++        )
++    }
++
++    private suspend fun verifyPackageCompile(
++        packageName: String,
++        mode: AppOptimizationType,
++        commandResult: com.tony.appbooster.domain.model.common.ShellCommandResult
++    ): PackageCompileVerification {
++        val verboseFilter = DexoptStatusParser.parseCompilerFilterFromOutput(
++            "${commandResult.stdout}\n${commandResult.stderr}"
++        )
++
++        val dumpFilter = runCatching {
++            shellDataSource.executeCommandDetailed(ShellCommandSpec.PackageDump(packageName))
++                .getOrNull()
++                ?.takeIf { it.isSuccess }
++                ?.let { result -> DexoptStatusParser.parseCompilerFilterFromOutput(result.stdout) }
++        }.getOrNull()
++
++        val resolverFilter = compilationResolver
++            .queryPackageCompilationInfo(packageName, mode.requestedCompileMode)
++            .compilerFilter
++
++        val actualFilter = dumpFilter ?: verboseFilter ?: resolverFilter
++        val verified = actualFilter != null && isAcceptedCompileFilter(actualFilter, mode)
++
++        return PackageCompileVerification(
++            verified = verified,
++            filter = actualFilter,
++            reason = when {
++                verified -> null
++                actualFilter == null -> "Post-run ART state was unclear."
++                else -> "Expected ${mode.requestedCompileMode}, but ART reported $actualFilter."
++            } ?: "Verified"
++        )
++    }
++
++    private fun isAcceptedCompileFilter(
++        actualFilter: String,
++        mode: AppOptimizationType
++    ): Boolean {
++        val actual = actualFilter.lowercase()
++        return when (mode) {
++            AppOptimizationType.SPEED_PROFILE ->
++                actual in setOf("speed-profile", "speed", "everything")
++            AppOptimizationType.FULL_DEX2OAT_SPEED,
++            AppOptimizationType.HEAVY_APPS_SPEED ->
++                actual in setOf("speed", "everything")
++            AppOptimizationType.ADVANCED_FULL_COMPILE ->
++                actual == "everything"
++        }
+     }
+ 
+     private suspend fun recordStepFailure(
+@@ -750,21 +937,35 @@ class AdbRepositoryImpl @Inject constructor(
+     /** Updates analysis and progress state after a successful run. */
+     private fun finaliseCompletion(
+         totalInstalled: Int,
+-        optimisedCount: Int,
++        summary: CompileRunSummary,
+         skippedCount: Int,
+         mode: AppOptimizationType
+     ) {
+-        logger.addLog("✓ Optimization complete! $optimisedCount apps optimized.")
++        val hasIssues = summary.failedCount > 0 || summary.unverifiedCount > 0
++        val completionDetail = buildString {
++            append("${summary.optimizedCount} verified optimized")
++            if (skippedCount > 0) append(", $skippedCount already/skipped")
++            if (summary.failedCount > 0) append(", ${summary.failedCount} failed/refused")
++            if (summary.unverifiedCount > 0) append(", ${summary.unverifiedCount} unverified")
++        }
++        logger.addLog(
++            if (hasIssues) {
++                "Optimization finished with issues: $completionDetail."
++            } else {
++                "✓ Optimization complete: $completionDetail."
++            }
++        )
+         logger.addLogEntry(LogEntryType.COMPLETE, messageKey = LogMessageKey.OPTIMIZATION_COMPLETE,
+-            detail = "$optimisedCount apps")
++            detail = completionDetail)
+ 
+         val prevAnalysis = _optimizationAnalysis.value
+         _optimizationAnalysis.value = OptimizationAnalysis(
+             totalAppsScanned = totalInstalled,
+-            // freshly compiled this run + apps that were already optimal (skipped)
+             appsNeedingOptimization = 0,
+-            appsAlreadyOptimized = optimisedCount + skippedCount,
++            appsAlreadyOptimized = summary.optimizedCount + skippedCount,
+             appsWithNoProfile = prevAnalysis.appsWithNoProfile,
++            failedOrRefusedCount = summary.failedCount,
++            unverifiedCount = summary.unverifiedCount,
+             isScanning = false,
+             lastScanTimeMs = System.currentTimeMillis(),
+             mode = mode
+@@ -772,9 +973,12 @@ class AdbRepositoryImpl @Inject constructor(
+ 
+         _optimizationProgress.value = _optimizationProgress.value.copy(
+             isRunning = false,
+-            result = OptimizationResult.Completed,
++            result = if (hasIssues) OptimizationResult.CompletedWithIssues else OptimizationResult.Completed,
+             currentAppPackage = "",
+-            progress = 1f
++            progress = 1f,
++            optimizedSucceededCount = summary.optimizedCount,
++            failedOrRefusedCount = summary.failedCount,
++            unverifiedCount = summary.unverifiedCount
+         )
+     }
+ 
+@@ -800,7 +1004,7 @@ class AdbRepositoryImpl @Inject constructor(
+         packages: List<String>,
+         mode: AppOptimizationType
+     ): OptimizationAnalysis {
+-        val compileMode = mode.value
++        val compileMode = mode.requestedCompileMode
+         var needsOptimization = 0
+         var alreadyOptimized = 0
+         var noProfile = 0
+@@ -897,9 +1101,24 @@ class AdbRepositoryImpl @Inject constructor(
+         val processedCount: Int,
+         val isResumed: Boolean
+     )
++
++    private data class CompileRunSummary(
++        val processedCount: Int,
++        val optimizedCount: Int,
++        val failedCount: Int,
++        val unverifiedCount: Int
++    )
++
++    private data class PackageCompileVerification(
++        val verified: Boolean,
++        val filter: String?,
++        val reason: String
++    )
+ }
+ 
+ private fun AppOptimizationType.displayName(): String = when (this) {
+-    AppOptimizationType.SPEED_PROFILE -> "Balanced Daily"
+-    AppOptimizationType.FULL_OPTIMIZATION -> "Gaming/Heavy Apps"
++    AppOptimizationType.SPEED_PROFILE -> "Speed Profile"
++    AppOptimizationType.FULL_DEX2OAT_SPEED -> "Full DEXtoOAT Speed"
++    AppOptimizationType.ADVANCED_FULL_COMPILE -> "Advanced Full Compile"
++    AppOptimizationType.HEAVY_APPS_SPEED -> "Gaming/Heavy Apps"
+ }
+diff --git a/app/src/main/java/com/tony/appbooster/data/repository/SettingsDataStoreRepository.kt b/app/src/main/java/com/tony/appbooster/data/repository/SettingsDataStoreRepository.kt
+index cb11aa8..f5f3bfc 100644
+--- a/app/src/main/java/com/tony/appbooster/data/repository/SettingsDataStoreRepository.kt
++++ b/app/src/main/java/com/tony/appbooster/data/repository/SettingsDataStoreRepository.kt
+@@ -52,10 +52,7 @@ class SettingsDataStoreRepository @Inject constructor(
+             .map { preferences ->
+                 val rawValue = preferences[Keys.APP_OPTIMIZATION_TYPE]
+                 val type = rawValue
+-                    ?.let { stored ->
+-                        runCatching { AppOptimizationType.valueOf(stored) }
+-                            .getOrDefault(AppOptimizationType.SPEED_PROFILE)
+-                    }
++                    ?.let(AppOptimizationType::fromStoredValue)
+                     ?: AppOptimizationType.SPEED_PROFILE
+ 
+                 Resource.Success(type) as Resource<AppOptimizationType>
+@@ -111,7 +108,7 @@ class SettingsDataStoreRepository @Inject constructor(
+     ): Resource<Unit> {
+         return try {
+             applicationContext.settingsDataStore.edit { preferences ->
+-                preferences[Keys.APP_OPTIMIZATION_TYPE] = type.name
++                preferences[Keys.APP_OPTIMIZATION_TYPE] = type.value
+             }
+             Resource.Success(Unit)
+         } catch (throwable: Throwable) {
+diff --git a/app/src/main/java/com/tony/appbooster/data/util/DexoptStatusParser.kt b/app/src/main/java/com/tony/appbooster/data/util/DexoptStatusParser.kt
+index cae1f62..e1c7879 100644
+--- a/app/src/main/java/com/tony/appbooster/data/util/DexoptStatusParser.kt
++++ b/app/src/main/java/com/tony/appbooster/data/util/DexoptStatusParser.kt
+@@ -85,10 +85,30 @@ internal object DexoptStatusParser {
+         return if (isPackagePresentInDexoptDump(packageName, dump)) "unknown-present" else null
+     }
+ 
++    /**
++     * Parses the strongest compiler-filter signal from verbose compile or package dump output.
++     */
++    fun parseCompilerFilterFromOutput(output: String): String? {
++        if (output.isBlank()) return null
++
++        output.lineSequence().forEach { line ->
++            parseCompilerFilterFromLine(line.trim().lowercase())?.let { return it }
++        }
++        return null
++    }
++
+     /**
+      * Extracts a compiler filter keyword from a single lowercased line.
+      */
+     fun parseCompilerFilterFromLine(lowercasedLine: String): String? {
++        val exactAssignment = Regex(
++            """(?:actualcompilerfilter|compiler[-_ ]?filter|filter|status)\s*=\s*(speed-profile|everything|speed|verify|quicken|run-from-apk|extract)"""
++        ).find(lowercasedLine)?.groupValues?.getOrNull(1)
++
++        if (exactAssignment != null) {
++            return if (exactAssignment == "run-from-apk") "extract" else exactAssignment
++        }
++
+         return when {
+             lowercasedLine.contains("speed-profile") -> "speed-profile"
+             lowercasedLine.contains("everything") -> "everything"
+diff --git a/app/src/main/java/com/tony/appbooster/domain/model/common/OptimizationAnalysis.kt b/app/src/main/java/com/tony/appbooster/domain/model/common/OptimizationAnalysis.kt
+index b244569..6b10154 100644
+--- a/app/src/main/java/com/tony/appbooster/domain/model/common/OptimizationAnalysis.kt
++++ b/app/src/main/java/com/tony/appbooster/domain/model/common/OptimizationAnalysis.kt
+@@ -27,6 +27,8 @@ data class OptimizationAnalysis(
+     val appsNeedingOptimization: Int = 0,
+     val appsAlreadyOptimized: Int = 0,
+     val appsWithNoProfile: Int = 0,
++    val failedOrRefusedCount: Int = 0,
++    val unverifiedCount: Int = 0,
+     val packagesNeedingOptimization: List<String> = emptyList(),
+     val isScanning: Boolean = false,
+     val currentPackage: String = "",
+@@ -43,7 +45,12 @@ data class OptimizationAnalysis(
+      * Whether all apps are already optimized (nothing to do).
+      */
+     val allOptimized: Boolean
+-        get() = hasScanned && appsNeedingOptimization == 0 && appsAlreadyOptimized > 0
++        get() = hasScanned &&
++            totalAppsScanned > 0 &&
++            appsNeedingOptimization == 0 &&
++            failedOrRefusedCount == 0 &&
++            unverifiedCount == 0 &&
++            appsAlreadyOptimized > 0
+ 
+     /**
+      * Progress of the current scan from 0f to 1f.
+diff --git a/app/src/main/java/com/tony/appbooster/domain/model/common/OptimizationProgress.kt b/app/src/main/java/com/tony/appbooster/domain/model/common/OptimizationProgress.kt
+index 2d69269..2f0e12a 100644
+--- a/app/src/main/java/com/tony/appbooster/domain/model/common/OptimizationProgress.kt
++++ b/app/src/main/java/com/tony/appbooster/domain/model/common/OptimizationProgress.kt
+@@ -15,8 +15,13 @@ package com.tony.appbooster.domain.model.common
+  * @property result Final result of the most recent run.
+  * @property currentAppPackage The package name of the app currently being optimized.
+  * @property progress Progress value from 0.0 to 1.0.
+- * @property processedCount Number of apps already optimized.
+- * @property skippedCount Number of apps skipped (already optimized recently).
++ * @property processedCount Number of target packages processed for progress.
++ * @property skippedCount Number of apps skipped before compile (already optimized or no profile).
++ * @property optimizedSucceededCount Number of target packages verified after compile.
++ * @property alreadyOptimizedCount Number of target packages skipped because they already matched.
++ * @property skippedNoProfileCount Number of speed-profile targets skipped because no runtime profile exists.
++ * @property failedOrRefusedCount Number of target packages whose compile command failed or was refused.
++ * @property unverifiedCount Number of target packages whose command returned success but post-run evidence was unclear.
+  * @property totalCount Total number of apps to optimize.
+  */
+ data class OptimizationProgress(
+@@ -27,6 +32,11 @@ data class OptimizationProgress(
+     val progress: Float = 0f,
+     val processedCount: Int = 0,
+     val skippedCount: Int = 0,
++    val optimizedSucceededCount: Int = 0,
++    val alreadyOptimizedCount: Int = 0,
++    val skippedNoProfileCount: Int = 0,
++    val failedOrRefusedCount: Int = 0,
++    val unverifiedCount: Int = 0,
+     val totalCount: Int = 0
+ )
+ 
+@@ -45,6 +55,12 @@ sealed interface OptimizationResult {
+      */
+     data object Completed : OptimizationResult
+ 
++    /**
++     * The optimization flow finished, but one or more packages failed/refused
++     * the command or could not be verified with ART/package-manager evidence.
++     */
++    data object CompletedWithIssues : OptimizationResult
++
+     /**
+      * The optimization flow was stopped before completion.
+      */
+diff --git a/app/src/main/java/com/tony/appbooster/domain/model/common/ShellCommandSpec.kt b/app/src/main/java/com/tony/appbooster/domain/model/common/ShellCommandSpec.kt
+index d775271..424a5c9 100644
+--- a/app/src/main/java/com/tony/appbooster/domain/model/common/ShellCommandSpec.kt
++++ b/app/src/main/java/com/tony/appbooster/domain/model/common/ShellCommandSpec.kt
+@@ -41,6 +41,16 @@ sealed interface ShellCommandSpec {
+         override val displayCommand: String = argv.joinToString(" ")
+     }
+ 
++    data object PackageHelp : ShellCommandSpec {
++        override val argv: List<String> = listOf("cmd", "package", "help")
++        override val displayCommand: String = argv.joinToString(" ")
++    }
++
++    data object PackageCompileHelp : ShellCommandSpec {
++        override val argv: List<String> = listOf("cmd", "package", "compile", "--help")
++        override val displayCommand: String = argv.joinToString(" ")
++    }
++
+     data class DumpsysPackageForPackage(
+         val packageName: String
+     ) : ShellCommandSpec {
+@@ -52,10 +62,23 @@ sealed interface ShellCommandSpec {
+         override val displayCommand: String = argv.joinToString(" ")
+     }
+ 
++    data class PackageDump(
++        val packageName: String
++    ) : ShellCommandSpec {
++        init {
++            PackageNameValidator.requireValid(packageName)
++        }
++
++        override val argv: List<String> = listOf("cmd", "package", "dump", packageName)
++        override val displayCommand: String = argv.joinToString(" ")
++    }
++
+     data class PackageCompile(
+         val packageName: String,
+         val mode: String,
+-        val force: Boolean = true
++        val force: Boolean = true,
++        val full: Boolean = false,
++        val verbose: Boolean = false
+     ) : ShellCommandSpec {
+         init {
+             PackageNameValidator.requireValid(packageName)
+@@ -69,6 +92,8 @@ sealed interface ShellCommandSpec {
+             add("-m")
+             add(mode)
+             if (force) add("-f")
++            if (full) add("--full")
++            if (verbose) add("-v")
+             add(packageName)
+         }
+         override val displayCommand: String = argv.joinToString(" ")
+@@ -108,7 +133,7 @@ sealed interface ShellCommandSpec {
+     }
+ 
+     companion object {
+-        private val COMPILE_MODES = setOf("speed-profile", "speed")
++        private val COMPILE_MODES = setOf("speed-profile", "speed", "everything")
+ 
+         fun isAllowedArgv(argv: List<String>): Boolean {
+             return when {
+@@ -116,11 +141,14 @@ sealed interface ShellCommandSpec {
+                 argv == ListPackages.argv -> true
+                 argv == DumpsysPackageDexopt.argv -> true
+                 argv == DumpsysThermalService.argv -> true
++                argv == PackageHelp.argv -> true
++                argv == PackageCompileHelp.argv -> true
+                 argv.size == 3 &&
+                     argv[0] == "dumpsys" &&
+                     argv[1] == "package" ->
+                     PackageNameValidator.isValid(argv[2])
+ 
++                isAllowedPackageDump(argv) -> true
+                 isAllowedPackageCompile(argv) -> true
+                 isAllowedPackageCompileCheck(argv) -> true
+                 isAllowedPackageCompileReset(argv) -> true
+@@ -129,16 +157,22 @@ sealed interface ShellCommandSpec {
+             }
+         }
+ 
++        private fun isAllowedPackageDump(argv: List<String>): Boolean =
++            argv.size == 4 &&
++                argv.take(3) == listOf("cmd", "package", "dump") &&
++                PackageNameValidator.isValid(argv[3])
++
+         private fun isAllowedPackageCompile(argv: List<String>): Boolean {
+-            if (argv.size !in setOf(6, 7)) return false
++            if (argv.size !in 6..9) return false
+             if (argv.take(5) != listOf("cmd", "package", "compile", "-m", argv[4])) return false
+             if (argv[4] !in COMPILE_MODES) return false
+ 
+-            return when (argv.size) {
+-                6 -> PackageNameValidator.isValid(argv[5])
+-                7 -> argv[5] == "-f" && PackageNameValidator.isValid(argv[6])
+-                else -> false
+-            }
++            val options = argv.subList(5, argv.lastIndex)
++            val packageName = argv.last()
++            val allowedOptions = setOf("-f", "--full", "-v")
++            return options.all { it in allowedOptions } &&
++                options.distinct().size == options.size &&
++                PackageNameValidator.isValid(packageName)
+         }
+ 
+         private fun isAllowedPackageCompileCheck(argv: List<String>): Boolean =
+diff --git a/app/src/main/java/com/tony/appbooster/domain/model/settings/AppOptimizationType.kt b/app/src/main/java/com/tony/appbooster/domain/model/settings/AppOptimizationType.kt
+index cfb54d8..523b89d 100644
+--- a/app/src/main/java/com/tony/appbooster/domain/model/settings/AppOptimizationType.kt
++++ b/app/src/main/java/com/tony/appbooster/domain/model/settings/AppOptimizationType.kt
+@@ -1,17 +1,77 @@
+ package com.tony.appbooster.domain.model.settings
+ 
+ /**
+- * Represents how the application should optimize its runtime behavior,
+- * allowing the user to trade off compilation time against runtime speed.
++ * Describes the package-manager compiler filter separately from the target package scope.
++ *
++ * The raw ART compiler filter is not enough to identify the user-selected mode:
++ * both all-app Full DEXtoOAT Speed and selected Gaming / Heavy Apps use `speed`,
++ * but they intentionally target different package sets.
+  */
+-enum class AppOptimizationType(val value: String) {
+-    /**
+-     * Prioritizes fast install and incremental builds over maximum runtime speed.
+-     */
+-    SPEED_PROFILE("speed-profile"),
+-
+-    /**
+-     * Compiles more aggressively for runtime performance at the cost of longer build times.
+-     */
+-    FULL_OPTIMIZATION("speed");
++enum class AppOptimizationType(
++    val value: String,
++    val displayName: String,
++    val requestedCompileMode: String,
++    val targetScope: OptimizationTargetScope,
++    val useFullDexoptScope: Boolean = false,
++    val requiresRuntimeModeSupportCheck: Boolean = false
++) {
++    SPEED_PROFILE(
++        value = "SPEED_PROFILE",
++        displayName = "Speed Profile",
++        requestedCompileMode = "speed-profile",
++        targetScope = OptimizationTargetScope.AllEligible
++    ),
++
++    FULL_DEX2OAT_SPEED(
++        value = "FULL_DEX2OAT_SPEED",
++        displayName = "Full DEXtoOAT Speed",
++        requestedCompileMode = "speed",
++        targetScope = OptimizationTargetScope.AllEligible,
++        useFullDexoptScope = true
++    ),
++
++    ADVANCED_FULL_COMPILE(
++        value = "ADVANCED_FULL_COMPILE",
++        displayName = "Advanced Full Compile",
++        requestedCompileMode = "everything",
++        targetScope = OptimizationTargetScope.AllEligible,
++        useFullDexoptScope = true,
++        requiresRuntimeModeSupportCheck = true
++    ),
++
++    HEAVY_APPS_SPEED(
++        value = "HEAVY_APPS_SPEED",
++        displayName = "Gaming / Heavy Apps",
++        requestedCompileMode = "speed",
++        targetScope = OptimizationTargetScope.SelectedHeavyApps,
++        useFullDexoptScope = true
++    );
++
++    companion object {
++        fun fromStoredValue(value: String?): AppOptimizationType? {
++            val normalized = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
++
++            return entries.firstOrNull { type ->
++                type.name.equals(normalized, ignoreCase = true) ||
++                    type.value.equals(normalized, ignoreCase = true)
++            } ?: when (normalized.lowercase()) {
++                "speed-profile" -> SPEED_PROFILE
++                "speed" -> FULL_DEX2OAT_SPEED
++                // Preserve the old two-mode selector semantics for existing DataStore values.
++                "full_optimization" -> HEAVY_APPS_SPEED
++                else -> null
++            }
++        }
++    }
++}
++
++sealed interface OptimizationTargetScope {
++    data object AllEligible : OptimizationTargetScope
++    data object SelectedHeavyApps : OptimizationTargetScope
+ }
++
++data class CompileModeSupport(
++    val requestedMode: String,
++    val isSupported: Boolean,
++    val reason: String? = null
++)
+diff --git a/app/src/main/java/com/tony/appbooster/presentation/screen/dashboard/components/DashboardHeroCard.kt b/app/src/main/java/com/tony/appbooster/presentation/screen/dashboard/components/DashboardHeroCard.kt
+index 76c83d5..2488f5a 100644
+--- a/app/src/main/java/com/tony/appbooster/presentation/screen/dashboard/components/DashboardHeroCard.kt
++++ b/app/src/main/java/com/tony/appbooster/presentation/screen/dashboard/components/DashboardHeroCard.kt
+@@ -127,6 +127,9 @@ fun DashboardHeroCard(
+                 result is OptimizationResult.Completed
+                     && !model.isCurrentResultDismissed -> HeroPhase.RESULT_COMPLETED
+ 
++                result is OptimizationResult.CompletedWithIssues
++                    && !model.isCurrentResultDismissed -> HeroPhase.RESULT_COMPLETED_WITH_ISSUES
++
+                 result is OptimizationResult.Canceled
+                     && !model.isCurrentResultDismissed -> HeroPhase.RESULT_CANCELED
+ 
+@@ -206,7 +209,7 @@ fun DashboardHeroCard(
+                     HeroPhase.RESULT_COMPLETED -> {
+                         HeroResultPanel(
+                             status = HeroCardStatus.Completed(
+-                                processedCount = model.optimizationProgress.processedCount,
++                                processedCount = model.optimizationProgress.optimizedSucceededCount,
+                                 skippedCount = model.optimizationProgress.skippedCount,
+                                 totalCount = model.optimizationProgress.totalCount,
+                                 noProfileCount = model.optimizationAnalysis.appsWithNoProfile,
+@@ -218,10 +221,27 @@ fun DashboardHeroCard(
+                         )
+                     }
+ 
++                    HeroPhase.RESULT_COMPLETED_WITH_ISSUES -> {
++                        HeroResultPanel(
++                            status = HeroCardStatus.CompletedWithIssues(
++                                processedCount = model.optimizationProgress.optimizedSucceededCount,
++                                skippedCount = model.optimizationProgress.skippedCount,
++                                failedCount = model.optimizationProgress.failedOrRefusedCount,
++                                unverifiedCount = model.optimizationProgress.unverifiedCount,
++                                totalCount = model.optimizationProgress.totalCount,
++                                noProfileCount = model.optimizationAnalysis.appsWithNoProfile,
++                                optimizationMode = model.optimizationMode
++                            ),
++                            onDismiss = onDismissResult,
++                            onRunAgain = onStartOptimization,
++                            onForceOptimize = onForceOptimize
++                        )
++                    }
++
+                     HeroPhase.RESULT_CANCELED -> {
+                         HeroResultPanel(
+                             status = HeroCardStatus.Canceled(
+-                                processedCount = model.optimizationProgress.processedCount,
++                                processedCount = model.optimizationProgress.optimizedSucceededCount,
+                                 skippedCount = model.optimizationProgress.skippedCount,
+                                 totalCount = model.optimizationProgress.totalCount,
+                                 noProfileCount = model.optimizationAnalysis.appsWithNoProfile,
+@@ -236,7 +256,7 @@ fun DashboardHeroCard(
+                     HeroPhase.RESULT_FAILED -> {
+                         HeroResultPanel(
+                             status = HeroCardStatus.Failed(
+-                                processedCount = model.optimizationProgress.processedCount,
++                                processedCount = model.optimizationProgress.optimizedSucceededCount,
+                                 skippedCount = model.optimizationProgress.skippedCount,
+                                 totalCount = model.optimizationProgress.totalCount,
+                                 noProfileCount = model.optimizationAnalysis.appsWithNoProfile,
+@@ -253,7 +273,7 @@ fun DashboardHeroCard(
+                         HeroResultPanel(
+                             status = HeroCardStatus.Paused(
+                                 reason = paused.reason,
+-                                processedCount = model.optimizationProgress.processedCount,
++                                processedCount = model.optimizationProgress.optimizedSucceededCount,
+                                 skippedCount = model.optimizationProgress.skippedCount,
+                                 totalCount = model.optimizationProgress.totalCount,
+                                 noProfileCount = model.optimizationAnalysis.appsWithNoProfile,
+@@ -327,9 +347,21 @@ private fun ReadyContent(
+             Icons.Rounded.Speed
+         )
+ 
+-        AppOptimizationType.FULL_OPTIMIZATION -> Triple(
+-            stringResource(R.string.dashboard_ready_full_optimization_title),
+-            stringResource(R.string.dashboard_ready_full_optimization_description),
++        AppOptimizationType.FULL_DEX2OAT_SPEED -> Triple(
++            stringResource(R.string.dashboard_ready_full_dex2oat_title),
++            stringResource(R.string.dashboard_ready_full_dex2oat_description),
++            Icons.Rounded.RocketLaunch
++        )
++
++        AppOptimizationType.ADVANCED_FULL_COMPILE -> Triple(
++            stringResource(R.string.dashboard_ready_advanced_full_title),
++            stringResource(R.string.dashboard_ready_advanced_full_description),
++            Icons.Rounded.RocketLaunch
++        )
++
++        AppOptimizationType.HEAVY_APPS_SPEED -> Triple(
++            stringResource(R.string.dashboard_ready_heavy_apps_title),
++            stringResource(R.string.dashboard_ready_heavy_apps_description),
+             Icons.Rounded.RocketLaunch
+         )
+     }
+@@ -467,6 +499,7 @@ private enum class HeroPhase {
+     SCANNING,
+     OPTIMIZING,
+     RESULT_COMPLETED,
++    RESULT_COMPLETED_WITH_ISSUES,
+     RESULT_CANCELED,
+     RESULT_FAILED,
+     RESULT_PAUSED,
+diff --git a/app/src/main/java/com/tony/appbooster/presentation/screen/dashboard/components/DashboardResultPanels.kt b/app/src/main/java/com/tony/appbooster/presentation/screen/dashboard/components/DashboardResultPanels.kt
+index 79706c3..c88ec52 100644
+--- a/app/src/main/java/com/tony/appbooster/presentation/screen/dashboard/components/DashboardResultPanels.kt
++++ b/app/src/main/java/com/tony/appbooster/presentation/screen/dashboard/components/DashboardResultPanels.kt
+@@ -206,6 +206,10 @@ fun HeroResultPanel(
+         // ── Stats row (Completed and Canceled only) ─────────────────────
+         val showStats = when (status) {
+             is HeroCardStatus.Completed -> status.processedCount > 0 || status.skippedCount > 0
++            is HeroCardStatus.CompletedWithIssues -> status.processedCount > 0 ||
++                status.skippedCount > 0 ||
++                status.failedCount > 0 ||
++                status.unverifiedCount > 0
+             is HeroCardStatus.Canceled -> status.processedCount > 0 || status.skippedCount > 0
+             is HeroCardStatus.Failed -> status.processedCount > 0 || status.skippedCount > 0 || status.totalCount > 0
+             is HeroCardStatus.Paused -> status.processedCount > 0 || status.skippedCount > 0 || status.totalCount > 0
+@@ -221,6 +225,15 @@ fun HeroResultPanel(
+                     noProfileCount = status.noProfileCount,
+                     showNoProfile = isSpeedProfile
+                 )
++            } else if (status is HeroCardStatus.CompletedWithIssues) {
++                OptimizationStatsRow(
++                    needsOptimizationCount = 0,
++                    optimizedCount = status.processedCount + (status.skippedCount - status.noProfileCount).coerceAtLeast(0),
++                    noProfileCount = status.noProfileCount,
++                    failedCount = status.failedCount,
++                    unverifiedCount = status.unverifiedCount,
++                    showNoProfile = isSpeedProfile
++                )
+             } else if (status is HeroCardStatus.Canceled) {
+                 OptimizationStatsRow(
+                     needsOptimizationCount = (status.totalCount - (status.processedCount + status.skippedCount))
+@@ -373,6 +386,23 @@ private fun rememberHeroResultConfig(status: HeroCardStatus): HeroResultConfig {
+             showGlow = false,
+             showRunAgain = true
+         )
++        is HeroCardStatus.CompletedWithIssues -> HeroResultConfig(
++            icon = Icons.Rounded.Error,
++            containerColor = colorScheme.errorContainer,
++            iconTint = colorScheme.onErrorContainer,
++            glowColor = Color.Transparent,
++            title = stringResource(R.string.dashboard_result_completed_issues_title),
++            subtitle = stringResource(
++                R.string.dashboard_result_completed_issues_count,
++                status.processedCount,
++                status.failedCount,
++                status.unverifiedCount
++            ),
++            iconScaleTarget = 1.04f,
++            pulseMs = 900,
++            showGlow = false,
++            showRunAgain = true
++        )
+         is HeroCardStatus.Canceled -> HeroResultConfig(
+             icon = Icons.Rounded.DoNotDisturbOn,
+             containerColor = colorScheme.errorContainer,
+diff --git a/app/src/main/java/com/tony/appbooster/presentation/screen/dashboard/components/DashboardStats.kt b/app/src/main/java/com/tony/appbooster/presentation/screen/dashboard/components/DashboardStats.kt
+index dc8646c..d669d3b 100644
+--- a/app/src/main/java/com/tony/appbooster/presentation/screen/dashboard/components/DashboardStats.kt
++++ b/app/src/main/java/com/tony/appbooster/presentation/screen/dashboard/components/DashboardStats.kt
+@@ -50,6 +50,8 @@ fun OptimizationStatsRow(
+     needsOptimizationCount: Int,
+     optimizedCount: Int,
+     noProfileCount: Int = 0,
++    failedCount: Int = 0,
++    unverifiedCount: Int = 0,
+     showNoProfile: Boolean = true
+ ) {
+     Surface(
+@@ -81,6 +83,20 @@ fun OptimizationStatsRow(
+                     dotColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                 )
+             }
++            if (failedCount > 0) {
++                StatRow(
++                    count = failedCount,
++                    label = stringResource(R.string.analysis_card_failed_refused),
++                    dotColor = MaterialTheme.colorScheme.error
++                )
++            }
++            if (unverifiedCount > 0) {
++                StatRow(
++                    count = unverifiedCount,
++                    label = stringResource(R.string.analysis_card_unverified),
++                    dotColor = MaterialTheme.colorScheme.secondary
++                )
++            }
+         }
+     }
+ }
+diff --git a/app/src/main/java/com/tony/appbooster/presentation/screen/dashboard/components/HeroCardStatus.kt b/app/src/main/java/com/tony/appbooster/presentation/screen/dashboard/components/HeroCardStatus.kt
+index 41c0aea..b32b6fd 100644
+--- a/app/src/main/java/com/tony/appbooster/presentation/screen/dashboard/components/HeroCardStatus.kt
++++ b/app/src/main/java/com/tony/appbooster/presentation/screen/dashboard/components/HeroCardStatus.kt
+@@ -40,6 +40,16 @@ sealed interface HeroCardStatus {
+         override val optimizationMode: AppOptimizationType = AppOptimizationType.SPEED_PROFILE
+     ) : HeroCardStatus
+ 
++    data class CompletedWithIssues(
++        override val processedCount: Int,
++        override val skippedCount: Int,
++        val failedCount: Int,
++        val unverifiedCount: Int,
++        override val totalCount: Int,
++        val noProfileCount: Int = 0,
++        override val optimizationMode: AppOptimizationType = AppOptimizationType.SPEED_PROFILE
++    ) : HeroCardStatus
++
+     /**
+      * Optimization run was stopped by the user before all apps were processed.
+      *
+diff --git a/app/src/main/java/com/tony/appbooster/presentation/screen/settings/SettingsScreen.kt b/app/src/main/java/com/tony/appbooster/presentation/screen/settings/SettingsScreen.kt
+index f4d77bb..a915eb2 100644
+--- a/app/src/main/java/com/tony/appbooster/presentation/screen/settings/SettingsScreen.kt
++++ b/app/src/main/java/com/tony/appbooster/presentation/screen/settings/SettingsScreen.kt
+@@ -379,7 +379,7 @@ fun SettingsScreenContentLightPreview() {
+ @Composable
+ fun SettingsScreenContentDarkPreview() {
+     val uiState = SettingsUiState(
+-        appOptimizationType = AppOptimizationType.FULL_OPTIMIZATION,
++        appOptimizationType = AppOptimizationType.HEAVY_APPS_SPEED,
+         appVersionName = "1.0.0",
+         appVersionChannel = "Beta",
+         shizukuState = ShizukuState.NotRunning
+diff --git a/app/src/main/java/com/tony/appbooster/presentation/screen/settings/components/OptimizationTypeSelector.kt b/app/src/main/java/com/tony/appbooster/presentation/screen/settings/components/OptimizationTypeSelector.kt
+index 5d1e67f..aabe934 100644
+--- a/app/src/main/java/com/tony/appbooster/presentation/screen/settings/components/OptimizationTypeSelector.kt
++++ b/app/src/main/java/com/tony/appbooster/presentation/screen/settings/components/OptimizationTypeSelector.kt
+@@ -71,11 +71,29 @@ internal fun OptimizationTypeSelector(
+         )
+ 
+         OptimizationTypeCard(
+-            title = stringResource(R.string.settings_opt_full_title),
+-            description = stringResource(R.string.settings_opt_full_description),
++            title = stringResource(R.string.settings_opt_full_dex2oat_title),
++            description = stringResource(R.string.settings_opt_full_dex2oat_description),
+             icon = Icons.Outlined.Bolt,
+-            isSelected = selectedType == AppOptimizationType.FULL_OPTIMIZATION,
+-            onClick = { onTypeSelected(AppOptimizationType.FULL_OPTIMIZATION) }
++            isSelected = selectedType == AppOptimizationType.FULL_DEX2OAT_SPEED,
++            onClick = { onTypeSelected(AppOptimizationType.FULL_DEX2OAT_SPEED) }
++        )
++
++        OptimizationTypeCard(
++            title = stringResource(R.string.settings_opt_advanced_full_title),
++            description = stringResource(R.string.settings_opt_advanced_full_description),
++            icon = Icons.Outlined.Bolt,
++            isSelected = selectedType == AppOptimizationType.ADVANCED_FULL_COMPILE,
++            enabled = false,
++            disabledReason = stringResource(R.string.settings_opt_advanced_full_disabled_reason),
++            onClick = { onTypeSelected(AppOptimizationType.ADVANCED_FULL_COMPILE) }
++        )
++
++        OptimizationTypeCard(
++            title = stringResource(R.string.settings_opt_heavy_title),
++            description = stringResource(R.string.settings_opt_heavy_description),
++            icon = Icons.Outlined.Bolt,
++            isSelected = selectedType == AppOptimizationType.HEAVY_APPS_SPEED,
++            onClick = { onTypeSelected(AppOptimizationType.HEAVY_APPS_SPEED) }
+         )
+     }
+ }
+@@ -97,6 +115,8 @@ private fun OptimizationTypeCard(
+     description: String,
+     icon: ImageVector,
+     isSelected: Boolean,
++    enabled: Boolean = true,
++    disabledReason: String? = null,
+     onClick: () -> Unit
+ ) {
+     val interactionSource = remember { MutableInteractionSource() }
+@@ -156,6 +176,7 @@ private fun OptimizationTypeCard(
+             .clickable(
+                 interactionSource = interactionSource,
+                 indication = null,
++                enabled = enabled,
+                 onClick = onClick
+             )
+             .semantics { contentDescription = selectionContentDescription },
+@@ -203,10 +224,12 @@ private fun OptimizationTypeCard(
+                 )
+                 Spacer(modifier = Modifier.height(4.dp))
+                 Text(
+-                    text = description,
++                    text = disabledReason ?: description,
+                     style = MaterialTheme.typography.bodySmall,
+                     color = if (isSelected) {
+                         MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
++                    } else if (!enabled) {
++                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                     } else {
+                         MaterialTheme.colorScheme.onSurfaceVariant
+                     }
+diff --git a/app/src/main/java/com/tony/appbooster/presentation/worker/AnalysisWorker.kt b/app/src/main/java/com/tony/appbooster/presentation/worker/AnalysisWorker.kt
+index 4f9e9ab..2fdac8a 100644
+--- a/app/src/main/java/com/tony/appbooster/presentation/worker/AnalysisWorker.kt
++++ b/app/src/main/java/com/tony/appbooster/presentation/worker/AnalysisWorker.kt
+@@ -103,11 +103,7 @@ class AnalysisWorker @AssistedInject constructor(
+     }
+ 
+     private fun parseOptimizationMode(value: String): AppOptimizationType? {
+-        return when (value) {
+-            AppOptimizationType.SPEED_PROFILE.value -> AppOptimizationType.SPEED_PROFILE
+-            AppOptimizationType.FULL_OPTIMIZATION.value -> AppOptimizationType.FULL_OPTIMIZATION
+-            else -> null
+-        }
++        return AppOptimizationType.fromStoredValue(value)
+     }
+ 
+     companion object {
+diff --git a/app/src/main/java/com/tony/appbooster/presentation/worker/OptimizationWorker.kt b/app/src/main/java/com/tony/appbooster/presentation/worker/OptimizationWorker.kt
+index f074850..0e1b756 100644
+--- a/app/src/main/java/com/tony/appbooster/presentation/worker/OptimizationWorker.kt
++++ b/app/src/main/java/com/tony/appbooster/presentation/worker/OptimizationWorker.kt
+@@ -98,11 +98,7 @@ class OptimizationWorker @AssistedInject constructor(
+     }
+ 
+     private fun parseOptimizationMode(value: String): AppOptimizationType? {
+-        return when (value) {
+-            AppOptimizationType.SPEED_PROFILE.value -> AppOptimizationType.SPEED_PROFILE
+-            AppOptimizationType.FULL_OPTIMIZATION.value -> AppOptimizationType.FULL_OPTIMIZATION
+-            else -> null
+-        }
++        return AppOptimizationType.fromStoredValue(value)
+     }
+ 
+     companion object {
+@@ -302,6 +298,7 @@ class OptimizationWorker @AssistedInject constructor(
+         }
+         return when (result) {
+             OptimizationResult.Completed -> "completed"
++            OptimizationResult.CompletedWithIssues -> "completed_with_issues"
+             OptimizationResult.Canceled -> "canceled"
+             OptimizationResult.Failed -> "failed"
+             is OptimizationResult.Paused -> "paused"
+diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
+index f64cc74..b36255a 100644
+--- a/app/src/main/res/values/strings.xml
++++ b/app/src/main/res/values/strings.xml
+@@ -86,7 +86,9 @@
+     <string name="dashboard_result_canceled_title">Optimization canceled</string>
+     <string name="dashboard_result_failed_title">Optimization failed</string>
+     <string name="dashboard_result_paused_title">Optimization paused</string>
+-    <string name="dashboard_result_completed_count">%1$d of %2$d apps optimized</string>
++    <string name="dashboard_result_completed_count">%1$d of %2$d apps verified optimized</string>
++    <string name="dashboard_result_completed_issues_title">Finished with issues</string>
++    <string name="dashboard_result_completed_issues_count">%1$d verified, %2$d failed/refused, %3$d unverified</string>
+     <string name="dashboard_result_canceled_count">%1$d of %2$d apps optimized before stopping</string>
+     <string name="dashboard_result_failed_count">%1$d of %2$d apps optimized before the failure</string>
+ 
+@@ -137,7 +139,7 @@
+     <!-- Settings -->
+     <string name="settings_top_bar_title">Settings</string>
+     <string name="settings_section_optimization_title">Optimization Profile</string>
+-    <string name="settings_section_optimization_subtitle">Choose balanced daily compilation or targeted heavy-app speed</string>
++    <string name="settings_section_optimization_subtitle">Choose profile-guided, full DEXtoOAT speed, or selected heavy-app compilation</string>
+     <string name="settings_section_heavy_targets_title">Gaming / Heavy Apps Targets</string>
+     <string name="settings_section_heavy_targets_subtitle">Only these packages use full speed compilation</string>
+     <string name="settings_section_rollback_title">Rollback</string>
+@@ -147,10 +149,15 @@
+     <string name="settings_section_about_title">About</string>
+     <string name="settings_section_about_subtitle">App information</string>
+ 
+-    <string name="settings_opt_speed_title">Balanced Daily</string>
+-    <string name="settings_opt_speed_description">Uses speed-profile for daily reliability, lower heat, and reasonable storage use.</string>
+-    <string name="settings_opt_full_title">Gaming / Heavy Apps</string>
+-    <string name="settings_opt_full_description">Uses full speed compilation only for selected games, camera, browsers, or other heavy apps.</string>
++    <string name="settings_opt_speed_title">Speed Profile</string>
++    <string name="settings_opt_speed_description">Balanced ART optimization using profile-guided speed-profile compilation.</string>
++    <string name="settings_opt_full_dex2oat_title">Full DEXtoOAT Speed</string>
++    <string name="settings_opt_full_dex2oat_description">Aggressive ART optimization using speed mode with --full across all eligible apps.</string>
++    <string name="settings_opt_advanced_full_title">Advanced Full Compile</string>
++    <string name="settings_opt_advanced_full_description">Attempts Android\'s most complete package compile mode when the build advertises it.</string>
++    <string name="settings_opt_advanced_full_disabled_reason">Not supported on this Android build. Available filters: speed, speed-profile, verify.</string>
++    <string name="settings_opt_heavy_title">Gaming / Heavy Apps</string>
++    <string name="settings_opt_heavy_description">Uses speed mode with --full only for selected games, camera, browsers, or other heavy apps.</string>
+     <string name="settings_heavy_package_label">Package name</string>
+     <string name="settings_heavy_package_hint">Examples: com.sec.android.app.camera, com.android.chrome</string>
+     <string name="settings_heavy_empty">No heavy apps selected. Gaming / Heavy Apps mode will pause until you add at least one package.</string>
+@@ -194,8 +201,12 @@
+ 
+     <string name="dashboard_ready_speed_profile_title">Speed Profile</string>
+     <string name="dashboard_ready_speed_profile_description">Optimize apps based on usage patterns</string>
+-    <string name="dashboard_ready_full_optimization_title">Gaming / Heavy Apps</string>
+-    <string name="dashboard_ready_full_optimization_description">Full speed compilation for selected apps only</string>
++    <string name="dashboard_ready_full_dex2oat_title">Full DEXtoOAT Speed</string>
++    <string name="dashboard_ready_full_dex2oat_description">Runs speed mode with --full across all eligible apps</string>
++    <string name="dashboard_ready_advanced_full_title">Advanced Full Compile</string>
++    <string name="dashboard_ready_advanced_full_description">Requires runtime support for the everything compiler filter</string>
++    <string name="dashboard_ready_heavy_apps_title">Gaming / Heavy Apps</string>
++    <string name="dashboard_ready_heavy_apps_description">Runs full speed compilation only for selected apps</string>
+ 
+     <string name="about_app_title">Galaxy OptiDroid</string>
+     <string name="about_version_fallback">1.0.0</string>
+@@ -252,6 +263,8 @@
+     <string name="analysis_card_needs_optimization">Needs Optimization</string>
+     <string name="analysis_card_optimized">Optimized</string>
+     <string name="analysis_card_no_profile">No Profile</string>
++    <string name="analysis_card_failed_refused">Failed / Refused</string>
++    <string name="analysis_card_unverified">Unverified</string>
+     <string name="analysis_view_details">View Details</string>
+ 
+     <!-- Activity feed UI -->
+diff --git a/app/src/test/java/com/tony/appbooster/domain/model/ShellCommandSpecTest.kt b/app/src/test/java/com/tony/appbooster/domain/model/ShellCommandSpecTest.kt
+index 53e081f..2c82719 100644
+--- a/app/src/test/java/com/tony/appbooster/domain/model/ShellCommandSpecTest.kt
++++ b/app/src/test/java/com/tony/appbooster/domain/model/ShellCommandSpecTest.kt
+@@ -36,6 +36,54 @@ class ShellCommandSpecTest {
+         assertTrue(ShellCommandSpec.isAllowedArgv(spec.argv))
+     }
+ 
++    @Test
++    fun `given full speed compile spec when argv built then includes full scope`() {
++        val spec = ShellCommandSpec.PackageCompile(
++            packageName = "com.example.app",
++            mode = "speed",
++            force = true,
++            full = true
++        )
++
++        assertEquals(
++            listOf("cmd", "package", "compile", "-m", "speed", "-f", "--full", "com.example.app"),
++            spec.argv
++        )
++        assertTrue(ShellCommandSpec.isAllowedArgv(spec.argv))
++    }
++
++    @Test
++    fun `given verbose full speed compile spec when argv built then includes verbose flag`() {
++        val spec = ShellCommandSpec.PackageCompile(
++            packageName = "com.example.app",
++            mode = "speed",
++            force = true,
++            full = true,
++            verbose = true
++        )
++
++        assertEquals(
++            listOf("cmd", "package", "compile", "-m", "speed", "-f", "--full", "-v", "com.example.app"),
++            spec.argv
++        )
++        assertTrue(ShellCommandSpec.isAllowedArgv(spec.argv))
++    }
++
++    @Test
++    fun `given package help specs when checked then allowed`() {
++        assertTrue(ShellCommandSpec.isAllowedArgv(ShellCommandSpec.PackageHelp.argv))
++        assertTrue(ShellCommandSpec.isAllowedArgv(ShellCommandSpec.PackageCompileHelp.argv))
++    }
++
++    @Test
++    fun `given package dump spec when checked then validates package name`() {
++        val spec = ShellCommandSpec.PackageDump("com.example.app")
++
++        assertEquals(listOf("cmd", "package", "dump", "com.example.app"), spec.argv)
++        assertTrue(ShellCommandSpec.isAllowedArgv(spec.argv))
++        assertFalse(ShellCommandSpec.isAllowedArgv(listOf("cmd", "package", "dump", "com.example;reboot")))
++    }
++
+     @Test
+     fun `given unsafe argv when checked then rejected`() {
+         val unsafe = listOf("sh", "-c", "cmd package compile -m speed-profile -f com.example.app")
+diff --git a/app/src/test/java/com/tony/appbooster/domain/usecase/analysis/RunAnalysisUseCaseTest.kt b/app/src/test/java/com/tony/appbooster/domain/usecase/analysis/RunAnalysisUseCaseTest.kt
+index c36f9e5..f92afdd 100644
+--- a/app/src/test/java/com/tony/appbooster/domain/usecase/analysis/RunAnalysisUseCaseTest.kt
++++ b/app/src/test/java/com/tony/appbooster/domain/usecase/analysis/RunAnalysisUseCaseTest.kt
+@@ -55,7 +55,7 @@ class RunAnalysisUseCaseTest {
+         val error = ResourceError.LogicError("ADB not connected")
+         coEvery { repository.analyzeOptimizationStatus(any()) } returns Resource.Error(error)
+ 
+-        val result = useCase(AppOptimizationType.FULL_OPTIMIZATION)
++        val result = useCase(AppOptimizationType.HEAVY_APPS_SPEED)
+ 
+         assertTrue(result is Resource.Error)
+         assertEquals(error, (result as Resource.Error).data)
+@@ -64,12 +64,12 @@ class RunAnalysisUseCaseTest {
+     @Test
+     fun `given full optimization mode when invoke then passes mode to repository`() = runTest {
+         val analysis = OptimizationAnalysis()
+-        coEvery { repository.analyzeOptimizationStatus(AppOptimizationType.FULL_OPTIMIZATION) } returns
++        coEvery { repository.analyzeOptimizationStatus(AppOptimizationType.HEAVY_APPS_SPEED) } returns
+             Resource.Success(analysis)
+ 
+-        useCase(AppOptimizationType.FULL_OPTIMIZATION)
++        useCase(AppOptimizationType.HEAVY_APPS_SPEED)
+ 
+-        coVerify(exactly = 1) { repository.analyzeOptimizationStatus(AppOptimizationType.FULL_OPTIMIZATION) }
++        coVerify(exactly = 1) { repository.analyzeOptimizationStatus(AppOptimizationType.HEAVY_APPS_SPEED) }
+     }
+ }
+ 
+diff --git a/app/src/test/java/com/tony/appbooster/domain/usecase/analysis/StartAnalysisUseCaseTest.kt b/app/src/test/java/com/tony/appbooster/domain/usecase/analysis/StartAnalysisUseCaseTest.kt
+index 8971326..290a4fc 100644
+--- a/app/src/test/java/com/tony/appbooster/domain/usecase/analysis/StartAnalysisUseCaseTest.kt
++++ b/app/src/test/java/com/tony/appbooster/domain/usecase/analysis/StartAnalysisUseCaseTest.kt
+@@ -62,7 +62,7 @@ class StartAnalysisUseCaseTest {
+         coEvery { connectAdbUseCase() } returns Resource.Success(Unit)
+         coEvery { startAnalysisWorkUseCase(any()) } returns Resource.Error(workError)
+ 
+-        val result = useCase(AppOptimizationType.FULL_OPTIMIZATION)
++        val result = useCase(AppOptimizationType.HEAVY_APPS_SPEED)
+ 
+         assertTrue(result is Resource.Error)
+         assertEquals(workError, (result as Resource.Error).data)
+diff --git a/app/src/test/java/com/tony/appbooster/domain/usecase/optimization/OptimizeAppUseCaseTest.kt b/app/src/test/java/com/tony/appbooster/domain/usecase/optimization/OptimizeAppUseCaseTest.kt
+index 8dce3ac..819a578 100644
+--- a/app/src/test/java/com/tony/appbooster/domain/usecase/optimization/OptimizeAppUseCaseTest.kt
++++ b/app/src/test/java/com/tony/appbooster/domain/usecase/optimization/OptimizeAppUseCaseTest.kt
+@@ -42,9 +42,9 @@ class OptimizeAppUseCaseTest {
+ 
+     @Test
+     fun `given full optimization mode and repository succeeds when invoke then returns success`() = runTest {
+-        coEvery { repository.executeOptimizationCommand(AppOptimizationType.FULL_OPTIMIZATION) } returns Resource.Success(Unit)
++        coEvery { repository.executeOptimizationCommand(AppOptimizationType.HEAVY_APPS_SPEED) } returns Resource.Success(Unit)
+ 
+-        val result = useCase(AppOptimizationType.FULL_OPTIMIZATION)
++        val result = useCase(AppOptimizationType.HEAVY_APPS_SPEED)
+ 
+         assertTrue(result is Resource.Success)
+     }
+diff --git a/app/src/test/java/com/tony/appbooster/domain/usecase/optimization/StartOptimizationUseCaseTest.kt b/app/src/test/java/com/tony/appbooster/domain/usecase/optimization/StartOptimizationUseCaseTest.kt
+index 64d757b..aa286dd 100644
+--- a/app/src/test/java/com/tony/appbooster/domain/usecase/optimization/StartOptimizationUseCaseTest.kt
++++ b/app/src/test/java/com/tony/appbooster/domain/usecase/optimization/StartOptimizationUseCaseTest.kt
+@@ -62,7 +62,7 @@ class StartOptimizationUseCaseTest {
+         coEvery { connectAdbUseCase() } returns Resource.Success(Unit)
+         coEvery { startOptimizationWorkUseCase(any()) } returns Resource.Error(workError)
+ 
+-        val result = useCase(AppOptimizationType.FULL_OPTIMIZATION)
++        val result = useCase(AppOptimizationType.HEAVY_APPS_SPEED)
+ 
+         assertTrue(result is Resource.Error)
+         assertEquals(workError, (result as Resource.Error).data)
+diff --git a/app/src/test/java/com/tony/appbooster/domain/usecase/settings/SettingsUseCasesTest.kt b/app/src/test/java/com/tony/appbooster/domain/usecase/settings/SettingsUseCasesTest.kt
+index c28a60d..986d579 100644
+--- a/app/src/test/java/com/tony/appbooster/domain/usecase/settings/SettingsUseCasesTest.kt
++++ b/app/src/test/java/com/tony/appbooster/domain/usecase/settings/SettingsUseCasesTest.kt
+@@ -65,14 +65,14 @@ class SettingsUseCasesTest {
+ 
+     @Test
+     fun `given valid type when SetAppOptimizationTypeUseCase invoke then delegates to repository`() = runTest {
+-        coEvery { repository.setAppOptimizationType(AppOptimizationType.FULL_OPTIMIZATION) } returns
++        coEvery { repository.setAppOptimizationType(AppOptimizationType.HEAVY_APPS_SPEED) } returns
+             Resource.Success(Unit)
+ 
+         val useCase = SetAppOptimizationTypeUseCase(repository)
+-        val result = useCase(AppOptimizationType.FULL_OPTIMIZATION)
++        val result = useCase(AppOptimizationType.HEAVY_APPS_SPEED)
+ 
+         assertTrue(result is Resource.Success)
+-        coVerify(exactly = 1) { repository.setAppOptimizationType(AppOptimizationType.FULL_OPTIMIZATION) }
++        coVerify(exactly = 1) { repository.setAppOptimizationType(AppOptimizationType.HEAVY_APPS_SPEED) }
+     }
+ 
+     @Test
+diff --git a/app/src/test/java/com/tony/appbooster/presentation/viewmodel/main/MainViewModelTest.kt b/app/src/test/java/com/tony/appbooster/presentation/viewmodel/main/MainViewModelTest.kt
+index 558a9bf..6ae124e 100644
+--- a/app/src/test/java/com/tony/appbooster/presentation/viewmodel/main/MainViewModelTest.kt
++++ b/app/src/test/java/com/tony/appbooster/presentation/viewmodel/main/MainViewModelTest.kt
+@@ -338,12 +338,12 @@ class MainViewModelTest {
+     }
+ 
+     @Test
+-    fun `given settings emits FULL_OPTIMIZATION when observed then model reflects that mode`() = runTest {
+-        every { observeAppOptimizationTypeUseCase() } returns flowOf(Resource.Success(AppOptimizationType.FULL_OPTIMIZATION))
++    fun `given settings emits HEAVY_APPS_SPEED when observed then model reflects that mode`() = runTest {
++        every { observeAppOptimizationTypeUseCase() } returns flowOf(Resource.Success(AppOptimizationType.HEAVY_APPS_SPEED))
+         val vm = createViewModel()
+         advanceUntilIdle()
+ 
+-        assertEquals(AppOptimizationType.FULL_OPTIMIZATION, vm.uiState.value.data?.optimizationMode)
++        assertEquals(AppOptimizationType.HEAVY_APPS_SPEED, vm.uiState.value.data?.optimizationMode)
+     }
+ 
+     @Test
+diff --git a/app/src/test/java/com/tony/appbooster/presentation/viewmodel/settings/SettingsViewModelTest.kt b/app/src/test/java/com/tony/appbooster/presentation/viewmodel/settings/SettingsViewModelTest.kt
+index c89efee..945a911 100644
+--- a/app/src/test/java/com/tony/appbooster/presentation/viewmodel/settings/SettingsViewModelTest.kt
++++ b/app/src/test/java/com/tony/appbooster/presentation/viewmodel/settings/SettingsViewModelTest.kt
+@@ -107,12 +107,12 @@ class SettingsViewModelTest {
+     }
+ 
+     @Test
+-    fun `given settings emits FULL_OPTIMIZATION when created then uiState reflects FULL_OPTIMIZATION`() = runTest {
+-        every { observeAppOptimizationTypeUseCase() } returns flowOf(Resource.Success(AppOptimizationType.FULL_OPTIMIZATION))
++    fun `given settings emits HEAVY_APPS_SPEED when created then uiState reflects HEAVY_APPS_SPEED`() = runTest {
++        every { observeAppOptimizationTypeUseCase() } returns flowOf(Resource.Success(AppOptimizationType.HEAVY_APPS_SPEED))
+         val vm = createViewModel()
+         advanceUntilIdle()
+ 
+-        assertEquals(AppOptimizationType.FULL_OPTIMIZATION, vm.uiState.value.data?.appOptimizationType)
++        assertEquals(AppOptimizationType.HEAVY_APPS_SPEED, vm.uiState.value.data?.appOptimizationType)
+     }
+ 
+     @Test
+@@ -198,27 +198,27 @@ class SettingsViewModelTest {
+     // ── Persisting optimization type ──────────────────────────────────────────
+ 
+     @Test
+-    fun `given FULL_OPTIMIZATION selected when onOptimizationTypeSelected then calls setAppOptimizationTypeUseCase`() = runTest {
+-        coEvery { setAppOptimizationTypeUseCase(AppOptimizationType.FULL_OPTIMIZATION) } returns Resource.Success(Unit)
++    fun `given HEAVY_APPS_SPEED selected when onOptimizationTypeSelected then calls setAppOptimizationTypeUseCase`() = runTest {
++        coEvery { setAppOptimizationTypeUseCase(AppOptimizationType.HEAVY_APPS_SPEED) } returns Resource.Success(Unit)
+         val vm = createViewModel()
+         advanceUntilIdle()
+ 
+-        vm.onOptimizationTypeSelected(AppOptimizationType.FULL_OPTIMIZATION)
++        vm.onOptimizationTypeSelected(AppOptimizationType.HEAVY_APPS_SPEED)
+         advanceUntilIdle()
+ 
+-        coVerify(exactly = 1) { setAppOptimizationTypeUseCase(AppOptimizationType.FULL_OPTIMIZATION) }
++        coVerify(exactly = 1) { setAppOptimizationTypeUseCase(AppOptimizationType.HEAVY_APPS_SPEED) }
+     }
+ 
+     @Test
+     fun `given set optimization type succeeds when persisting then uiState appOptimizationType is updated`() = runTest {
+-        coEvery { setAppOptimizationTypeUseCase(AppOptimizationType.FULL_OPTIMIZATION) } returns Resource.Success(Unit)
++        coEvery { setAppOptimizationTypeUseCase(AppOptimizationType.HEAVY_APPS_SPEED) } returns Resource.Success(Unit)
+         val vm = createViewModel()
+         advanceUntilIdle()
+ 
+-        vm.onOptimizationTypeSelected(AppOptimizationType.FULL_OPTIMIZATION)
++        vm.onOptimizationTypeSelected(AppOptimizationType.HEAVY_APPS_SPEED)
+         advanceUntilIdle()
+ 
+-        assertEquals(AppOptimizationType.FULL_OPTIMIZATION, vm.uiState.value.data?.appOptimizationType)
++        assertEquals(AppOptimizationType.HEAVY_APPS_SPEED, vm.uiState.value.data?.appOptimizationType)
+     }
+ 
+     @Test
+@@ -228,7 +228,7 @@ class SettingsViewModelTest {
+         val vm = createViewModel()
+         advanceUntilIdle()
+ 
+-        vm.onOptimizationTypeSelected(AppOptimizationType.FULL_OPTIMIZATION)
++        vm.onOptimizationTypeSelected(AppOptimizationType.HEAVY_APPS_SPEED)
+         advanceUntilIdle()
+ 
+         // BaseViewModel sets error state on failure

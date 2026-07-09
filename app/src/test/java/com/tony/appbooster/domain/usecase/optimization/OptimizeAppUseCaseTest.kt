@@ -42,9 +42,9 @@ class OptimizeAppUseCaseTest {
 
     @Test
     fun `given full optimization mode and repository succeeds when invoke then returns success`() = runTest {
-        coEvery { repository.executeOptimizationCommand(AppOptimizationType.FULL_OPTIMIZATION) } returns Resource.Success(Unit)
+        coEvery { repository.executeOptimizationCommand(AppOptimizationType.HEAVY_APPS_SPEED) } returns Resource.Success(Unit)
 
-        val result = useCase(AppOptimizationType.FULL_OPTIMIZATION)
+        val result = useCase(AppOptimizationType.HEAVY_APPS_SPEED)
 
         assertTrue(result is Resource.Success)
     }

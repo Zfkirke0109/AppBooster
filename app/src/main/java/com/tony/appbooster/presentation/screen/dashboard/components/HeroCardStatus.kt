@@ -40,6 +40,16 @@ sealed interface HeroCardStatus {
         override val optimizationMode: AppOptimizationType = AppOptimizationType.SPEED_PROFILE
     ) : HeroCardStatus
 
+    data class CompletedWithIssues(
+        override val processedCount: Int,
+        override val skippedCount: Int,
+        val failedCount: Int,
+        val unverifiedCount: Int,
+        override val totalCount: Int,
+        val noProfileCount: Int = 0,
+        override val optimizationMode: AppOptimizationType = AppOptimizationType.SPEED_PROFILE
+    ) : HeroCardStatus
+
     /**
      * Optimization run was stopped by the user before all apps were processed.
      *

@@ -107,12 +107,12 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `given settings emits FULL_OPTIMIZATION when created then uiState reflects FULL_OPTIMIZATION`() = runTest {
-        every { observeAppOptimizationTypeUseCase() } returns flowOf(Resource.Success(AppOptimizationType.FULL_OPTIMIZATION))
+    fun `given settings emits HEAVY_APPS_SPEED when created then uiState reflects HEAVY_APPS_SPEED`() = runTest {
+        every { observeAppOptimizationTypeUseCase() } returns flowOf(Resource.Success(AppOptimizationType.HEAVY_APPS_SPEED))
         val vm = createViewModel()
         advanceUntilIdle()
 
-        assertEquals(AppOptimizationType.FULL_OPTIMIZATION, vm.uiState.value.data?.appOptimizationType)
+        assertEquals(AppOptimizationType.HEAVY_APPS_SPEED, vm.uiState.value.data?.appOptimizationType)
     }
 
     @Test
@@ -198,27 +198,27 @@ class SettingsViewModelTest {
     // ── Persisting optimization type ──────────────────────────────────────────
 
     @Test
-    fun `given FULL_OPTIMIZATION selected when onOptimizationTypeSelected then calls setAppOptimizationTypeUseCase`() = runTest {
-        coEvery { setAppOptimizationTypeUseCase(AppOptimizationType.FULL_OPTIMIZATION) } returns Resource.Success(Unit)
+    fun `given HEAVY_APPS_SPEED selected when onOptimizationTypeSelected then calls setAppOptimizationTypeUseCase`() = runTest {
+        coEvery { setAppOptimizationTypeUseCase(AppOptimizationType.HEAVY_APPS_SPEED) } returns Resource.Success(Unit)
         val vm = createViewModel()
         advanceUntilIdle()
 
-        vm.onOptimizationTypeSelected(AppOptimizationType.FULL_OPTIMIZATION)
+        vm.onOptimizationTypeSelected(AppOptimizationType.HEAVY_APPS_SPEED)
         advanceUntilIdle()
 
-        coVerify(exactly = 1) { setAppOptimizationTypeUseCase(AppOptimizationType.FULL_OPTIMIZATION) }
+        coVerify(exactly = 1) { setAppOptimizationTypeUseCase(AppOptimizationType.HEAVY_APPS_SPEED) }
     }
 
     @Test
     fun `given set optimization type succeeds when persisting then uiState appOptimizationType is updated`() = runTest {
-        coEvery { setAppOptimizationTypeUseCase(AppOptimizationType.FULL_OPTIMIZATION) } returns Resource.Success(Unit)
+        coEvery { setAppOptimizationTypeUseCase(AppOptimizationType.HEAVY_APPS_SPEED) } returns Resource.Success(Unit)
         val vm = createViewModel()
         advanceUntilIdle()
 
-        vm.onOptimizationTypeSelected(AppOptimizationType.FULL_OPTIMIZATION)
+        vm.onOptimizationTypeSelected(AppOptimizationType.HEAVY_APPS_SPEED)
         advanceUntilIdle()
 
-        assertEquals(AppOptimizationType.FULL_OPTIMIZATION, vm.uiState.value.data?.appOptimizationType)
+        assertEquals(AppOptimizationType.HEAVY_APPS_SPEED, vm.uiState.value.data?.appOptimizationType)
     }
 
     @Test
@@ -228,7 +228,7 @@ class SettingsViewModelTest {
         val vm = createViewModel()
         advanceUntilIdle()
 
-        vm.onOptimizationTypeSelected(AppOptimizationType.FULL_OPTIMIZATION)
+        vm.onOptimizationTypeSelected(AppOptimizationType.HEAVY_APPS_SPEED)
         advanceUntilIdle()
 
         // BaseViewModel sets error state on failure
