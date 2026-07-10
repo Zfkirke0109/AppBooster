@@ -41,6 +41,7 @@ class OptimizationAnalysisTest {
     fun `given scanned with no apps needing optimization and some already optimized when allOptimized then returns true`() {
         val analysis = OptimizationAnalysis(
             lastScanTimeMs = 1_000L,
+            totalAppsScanned = 5,
             appsNeedingOptimization = 0,
             appsAlreadyOptimized = 5
         )

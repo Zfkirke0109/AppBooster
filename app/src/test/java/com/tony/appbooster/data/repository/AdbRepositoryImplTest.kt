@@ -97,7 +97,7 @@ class AdbRepositoryImplTest {
             force = true
         )
         coEvery { packageQuery.queryInstalledPackages() } returns listOf(goodPackage, failingPackage)
-        coEvery { optimizationStepDao.findLatestResumableRunId("speed-profile", true) } returns null
+        coEvery { optimizationStepDao.findLatestResumableRunId("SPEED_PROFILE", true) } returns null
         coJustRun { optimizationStepDao.insertAll(any()) }
         coEvery { optimizationStepDao.getStepsForRun(any()) } returns listOf(goodStep, failingStep)
         coJustRun { optimizationStepDao.markRunning(goodStep.id, "verify", any()) }
@@ -144,10 +144,15 @@ class AdbRepositoryImplTest {
 
         // A single package failing to compile (e.g. a Knox/OEM-protected system
         // package) must not abort the whole run: every other package should
-        // still be located and processed, and the run should finish normally.
+        // still be located and processed. The failed package must be counted
+        // separately, never as optimized, and the run must finish as
+        // CompletedWithIssues rather than a clean Completed.
         assertTrue(result is Resource.Success)
-        assertTrue(repository.optimizationProgress.value.result is OptimizationResult.Completed)
-        assertEquals(1, repository.optimizationProgress.value.processedCount)
+        assertTrue(repository.optimizationProgress.value.result is OptimizationResult.CompletedWithIssues)
+        assertEquals(2, repository.optimizationProgress.value.processedCount)
+        assertEquals(1, repository.optimizationProgress.value.optimizedSucceededCount)
+        assertEquals(1, repository.optimizationProgress.value.failedOrRefusedCount)
+        assertEquals(0, repository.optimizationProgress.value.unverifiedCount)
         assertTrue(repository.logEntries.value.any { entry ->
             entry.type == LogEntryType.ERROR && entry.packageName == failingPackage
         })
@@ -194,7 +199,7 @@ class AdbRepositoryImplTest {
             force = true
         )
 
-        coEvery { optimizationStepDao.findLatestResumableRunId("speed-profile", true) } returns runId
+        coEvery { optimizationStepDao.findLatestResumableRunId("SPEED_PROFILE", true) } returns runId
         coEvery { optimizationStepDao.prepareResumedRun(runId, any()) } returns listOf(completedStep, pendingStep)
         coJustRun { optimizationStepDao.markRunning(pendingStep.id, "verify", any()) }
         coJustRun {
