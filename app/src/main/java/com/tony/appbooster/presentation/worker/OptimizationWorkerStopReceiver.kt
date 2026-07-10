@@ -35,11 +35,9 @@ class OptimizationWorkerStopReceiver : BroadcastReceiver() {
 
         CoroutineScope(Dispatchers.Default).launch {
             try {
-                // 1) Stop the worker itself.
-                WorkManager.getInstance(appContext).cancelWorkById(workUuid)
-
-                // 2) Immediately request repository-side cancellation so StateFlows update even if the worker
-                // is killed before it can execute its `catch (CancellationException)` block.
+                // Request repository-side cancellation first so StateFlows update
+                // even if WorkManager stops the worker before its cancellation
+                // handler runs.
                 val entryPoint = EntryPointAccessors.fromApplication(
                     appContext,
                     WorkerStopReceiverEntryPoint::class.java
@@ -48,6 +46,10 @@ class OptimizationWorkerStopReceiver : BroadcastReceiver() {
                 // Safe to call both; each method is a no-op if not running.
                 entryPoint.adbRepository().cancelOptimization()
                 entryPoint.adbRepository().cancelAnalysis()
+
+                // Stop the worker after repository state has recorded the user's
+                // cancellation request.
+                WorkManager.getInstance(appContext).cancelWorkById(workUuid)
             } finally {
                 pendingResult.finish()
             }

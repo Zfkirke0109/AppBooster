@@ -65,3 +65,94 @@ Verify guard behavior before longer runs:
 - Samsung Survival screenshot after refresh.
 - Optimization success or pause result.
 - Rollback success result.
+
+---
+
+# 2026-07-09/10 Wireless ADB Debug Validation (PR #4)
+
+Results of the real-device validation run for branch
+`fix/s23-full-compile-dex2oat-scan` (debug build, wireless ADB, no root,
+no Knox/SELinux changes).
+
+## Device
+
+- Samsung Galaxy S23 Ultra SM-S918U1, Android 16, One UI 8.5
+- Build `BP4A.251205.006.S918U1UES8FZF5`, security patch 2026-06-05
+- Wireless ADB serials used across sessions: `192.168.1.127:41857`,
+  `adb-R5CW6160LLN-Va93OQ._adb-tls-connect._tcp` (never hardcoded in source)
+
+## Install / permissions
+
+- Debug APK installed over wireless ADB. The previously sideloaded release
+  build (1.6.0) had a different signature; it was uninstalled with the
+  owner's explicit approval before the first debug install.
+- AGP `connectedDebugAndroidTest` uninstalls the app after each run; it was
+  reinstalled afterwards each time.
+- `POST_NOTIFICATIONS` granted=true, `moe.shizuku.manager.permission.API_V23`
+  granted=true (via `pm grant`); Shizuku service running.
+- App launched to `MainActivity` with zero crash lines in logcat.
+
+## One UI 8.5 compile support evidence (from the device)
+
+- `cmd package compile --help` → `Error: Unknown option: --help` (expected;
+  the app falls back to `cmd package help`).
+- `cmd package help` compile section advertises compiler filters
+  `speed`, `speed-profile`, `verify` ("Available options (in descending
+  order)"), plus `--full  Dexopt all above. (Recommended)` and
+  `-v[:LOG_TAGS]`. The `everything` filter appears nowhere in the 793-line
+  help output.
+
+## Full Compile / DEXopt All evidence
+
+- Scan (Analyze) started from the UI chip and completed: 715 needs
+  optimization / 54 optimized (769 packages).
+- Full Compile run started from the UI; the app's Shizuku shell service
+  logged the exact per-package cycle:
+  `cmd package compile -m speed -f --full -v <package>` →
+  `cmd package dump <package>` → `dumpsys package dexopt`.
+- ART responded (`artd: Should recompile: force recompilation`, `dex2oat64`
+  runs), and a compiled Samsung system package flipped to
+  `arm64: [status=speed] [reason=cmdline]` in `cmd package dump`.
+- The run survived backgrounding via the WorkManager foreground service
+  (ongoing notification on the `optimization` channel).
+- Honest counting held after stop: 31 verified optimized out of 35
+  processed; analysis card stayed consistent (684 remaining + 85 optimized
+  = 769).
+
+## Stop/Cancel defect found on device and its fix
+
+- Old defect: tapping Stop during a Full Compile run ended with an
+  "Optimization failed" card instead of "Canceled".
+- Root cause (two parts):
+  1. `StopOptimizationUseCase` / `StopAnalysisUseCase` /
+     `OptimizationWorkerStopReceiver` cancelled WorkManager *before* the
+     repository-side cancel, so the worker could die before the cancel flag
+     was recorded.
+  2. `AdbRepositoryImpl` wraps runs in `runCatching`, which swallows the
+     `CancellationException` thrown out of the in-flight shell command when
+     WorkManager cancels the worker, and its failure handler mapped it to
+     `OptimizationResult.Failed` — overwriting the `Canceled` state.
+- Fix: repository-side cancellation now happens first everywhere (flag is
+  set even when the visible running/scanning state has already shifted),
+  and the run/scan failure handlers treat `CancellationException` (or any
+  error racing a requested cancel) as `Canceled` — never `Failed`; a
+  cancelled shell command is rethrown instead of being counted as a failed
+  package, and a cancelled scan is not logged as a failed scan.
+- Unit tests cover: repository-first ordering in both stop use cases, the
+  flag path, the thrown-`CancellationException` path, the
+  `Result.failure(CancellationException)` path (no `markFailed`), and the
+  cancelled-scan path (no ERROR log, scan not finalised as successful).
+
+## Test results (this continuation)
+
+- Focused: `StopOptimizationUseCaseTest`, `StopAnalysisUseCaseTest`,
+  `AdbRepositoryImplTest`, `OptimizationAnalysisTest` — BUILD SUCCESSFUL.
+- Full `:app:testDebugUnitTest`, `:app:assembleDebug`,
+  `:app:connectedDebugAndroidTest`, `runAllTests` — see PR #4 checklist for
+  the final pass/fail state recorded at commit time.
+
+## Remaining manual recheck
+
+- After installing the fixed build: start a run, tap Stop, and confirm the
+  result card shows **Canceled** (not "Optimization failed"), the foreground
+  notification disappears, and no second compile starts.

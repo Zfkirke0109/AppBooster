@@ -30,6 +30,7 @@ import com.tony.appbooster.domain.repository.AdbConnectionState
 import com.tony.appbooster.domain.repository.AdbRepository
 import com.tony.appbooster.domain.repository.DeviceGuardRepository
 import com.tony.appbooster.domain.repository.SettingsRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
@@ -148,6 +149,7 @@ class AdbRepositoryImpl @Inject constructor(
      *         or [Resource.Error] with details if the request fails.
      */
     override suspend fun cancelOptimization(): Resource<Unit> = runCatching {
+        optimizationCancelRequested.set(true)
         if (!_optimizationProgress.value.isRunning) {
             logger.addLog("No optimization is currently running.")
             return@runCatching
@@ -161,7 +163,6 @@ class AdbRepositoryImpl @Inject constructor(
             progress = current.progress.coerceIn(0f, 1f)
         )
 
-        optimizationCancelRequested.set(true)
         logger.addLog("⏹ Cancelling optimization...")
         logger.addLogEntry(LogEntryType.CANCELLED, messageKey = LogMessageKey.OPTIMIZATION_CANCELLED)
     }.fold(
@@ -176,6 +177,7 @@ class AdbRepositoryImpl @Inject constructor(
      *         or [Resource.Error] with details if the request fails.
      */
     override suspend fun cancelAnalysis(): Resource<Unit> = runCatching {
+        analysisCancelRequested.set(true)
         if (!_optimizationAnalysis.value.isScanning) {
             logger.addLog("No analysis is currently running.")
             return@runCatching
@@ -186,7 +188,6 @@ class AdbRepositoryImpl @Inject constructor(
             currentPackage = ""
         )
 
-        analysisCancelRequested.set(true)
         logger.addLog("⏹ Cancelling analysis...")
         logger.addLogEntry(LogEntryType.CANCELLED, messageKey = LogMessageKey.ANALYSIS_CANCELLED)
     }.fold(
@@ -278,6 +279,25 @@ class AdbRepositoryImpl @Inject constructor(
         }.fold(
             onSuccess = { Resource.Success(Unit) },
             onFailure = { throwable ->
+                if (throwable is CancellationException || wasCancelled()) {
+                    // The Stop flow sets repository cancellation first, then
+                    // cancels WorkManager, which aborts the in-flight shell
+                    // command with a CancellationException. That exception (or
+                    // any other error racing a requested cancel) must end the
+                    // run as Canceled — never as Failed.
+                    if (_optimizationProgress.value.result !is OptimizationResult.Canceled) {
+                        logger.addLog("⏹ Optimization cancelled.")
+                        logger.addLogEntry(LogEntryType.CANCELLED, messageKey = LogMessageKey.OPTIMIZATION_CANCELLED)
+                    }
+                    _optimizationProgress.value = _optimizationProgress.value.copy(
+                        isRunning = false,
+                        result = OptimizationResult.Canceled,
+                        currentAppPackage = "",
+                        progress = _optimizationProgress.value.progress.coerceIn(0f, 1f)
+                    )
+                    return@fold Resource.Success(Unit)
+                }
+
                 val paused = throwable as? OptimizationPausedException
                 val message = throwable.message ?: "Unknown optimization error"
                 if (paused != null) {
@@ -364,14 +384,30 @@ class AdbRepositoryImpl @Inject constructor(
     }.fold(
         onSuccess = { Resource.Success(it) },
         onFailure = { throwable ->
-            _optimizationAnalysis.value = _optimizationAnalysis.value.copy(isScanning = false)
-            logger.addLogEntry(LogEntryType.ERROR, messageKey = LogMessageKey.ANALYSIS_FAILED, detail = throwable.message)
-            Resource.Error(
-                ResourceError.LogicError(
-                    errorMessage = "Analysis failed: ${throwable.message}",
-                    errorCode = "ADB_ANALYSIS_FAILED"
-                )
+            _optimizationAnalysis.value = _optimizationAnalysis.value.copy(
+                isScanning = false,
+                currentPackage = ""
             )
+            if (throwable is CancellationException) {
+                // User-requested stop (flag check throws) or WorkManager
+                // cancelled the worker mid-scan. cancelAnalysis() already
+                // logged the cancellation; a cancelled scan must not be
+                // reported as a failed scan, nor finalise as a successful one.
+                Resource.Error(
+                    ResourceError.LogicError(
+                        errorMessage = "Analysis cancelled",
+                        errorCode = "ADB_ANALYSIS_CANCELLED"
+                    )
+                )
+            } else {
+                logger.addLogEntry(LogEntryType.ERROR, messageKey = LogMessageKey.ANALYSIS_FAILED, detail = throwable.message)
+                Resource.Error(
+                    ResourceError.LogicError(
+                        errorMessage = "Analysis failed: ${throwable.message}",
+                        errorCode = "ADB_ANALYSIS_FAILED"
+                    )
+                )
+            }
         }
     )
 
@@ -746,6 +782,11 @@ class AdbRepositoryImpl @Inject constructor(
             if (commandAttempt.isFailure) {
                 val throwable = commandAttempt.exceptionOrNull()
                     ?: IllegalStateException("Compile command failed")
+                // The shell layer wraps execution in runCatching, so a worker
+                // cancellation can surface as Result.failure(CancellationException).
+                // That is not a package failure — rethrow so the run-level
+                // handler records the Canceled outcome.
+                if (throwable is CancellationException) throw throwable
                 recordStepFailure(step.id, packageName, throwable)
                 failedPackages += packageName
                 failedCount++

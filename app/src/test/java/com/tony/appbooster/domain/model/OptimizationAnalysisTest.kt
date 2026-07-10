@@ -42,10 +42,37 @@ class OptimizationAnalysisTest {
         val analysis = OptimizationAnalysis(
             lastScanTimeMs = 1_000L,
             totalAppsScanned = 5,
+            totalAppsToScan = 5,
             appsNeedingOptimization = 0,
             appsAlreadyOptimized = 5
         )
         assertTrue(analysis.allOptimized)
+    }
+
+    @Test
+    fun `given scanned with failed packages when allOptimized then returns false`() {
+        val analysis = OptimizationAnalysis(
+            lastScanTimeMs = 1_000L,
+            totalAppsScanned = 5,
+            totalAppsToScan = 5,
+            appsNeedingOptimization = 0,
+            appsAlreadyOptimized = 4,
+            failedOrRefusedCount = 1
+        )
+        assertFalse(analysis.allOptimized)
+    }
+
+    @Test
+    fun `given scanned with unverified packages when allOptimized then returns false`() {
+        val analysis = OptimizationAnalysis(
+            lastScanTimeMs = 1_000L,
+            totalAppsScanned = 5,
+            totalAppsToScan = 5,
+            appsNeedingOptimization = 0,
+            appsAlreadyOptimized = 4,
+            unverifiedCount = 1
+        )
+        assertFalse(analysis.allOptimized)
     }
 
     @Test

@@ -25,8 +25,11 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import io.mockk.verify
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -133,6 +136,7 @@ class AdbRepositoryImplTest {
         coEvery {
             shellDataSource.executeCommandDetailed(goodCommand)
         } returns Result.success(ShellCommandResult(exitCode = 0, stdout = "Success", stderr = ""))
+        stubPackageDump(goodPackage, "speed-profile")
         coEvery {
             shellDataSource.executeCommandDetailed(failingCommand)
         } returns Result.success(ShellCommandResult(exitCode = 1, stdout = "", stderr = "Package not found"))
@@ -221,6 +225,7 @@ class AdbRepositoryImplTest {
         coEvery {
             shellDataSource.executeCommandDetailed(pendingCommand)
         } returns Result.success(ShellCommandResult(exitCode = 0, stdout = "Success", stderr = ""))
+        stubPackageDump(pendingPackage, "speed-profile")
 
         val result = repository.executeOptimizationCommand(
             mode = AppOptimizationType.SPEED_PROFILE,
@@ -299,6 +304,7 @@ class AdbRepositoryImplTest {
         coEvery {
             shellDataSource.executeCommandDetailed(expectedCommand)
         } returns Result.success(ShellCommandResult(exitCode = 0, stdout = "Success", stderr = ""))
+        stubPackageDump(packageName, "speed")
 
         val result = repository.executeOptimizationCommand(
             mode = AppOptimizationType.ADVANCED_FULL_COMPILE,
@@ -340,6 +346,7 @@ class AdbRepositoryImplTest {
                     ShellCommandSpec.PackageCompile(packageName = packageName, mode = "speed", force = true)
                 )
             } returns Result.success(ShellCommandResult(exitCode = 0, stdout = "Success", stderr = ""))
+            stubPackageDump(packageName, "speed")
         }
 
         val result = repository.executeOptimizationCommand(
@@ -384,6 +391,7 @@ class AdbRepositoryImplTest {
                 ShellCommandSpec.PackageCompile(packageName = heavyPackage, mode = "speed", force = true)
             )
         } returns Result.success(ShellCommandResult(exitCode = 0, stdout = "Success", stderr = ""))
+        stubPackageDump(heavyPackage, "speed")
 
         val result = repository.executeOptimizationCommand(
             mode = AppOptimizationType.HEAVY_APPS_SPEED,
@@ -403,6 +411,166 @@ class AdbRepositoryImplTest {
                 it is ShellCommandSpec.PackageCompile && it.full
             })
         }
+    }
+
+    @Test
+    fun `given optimization is cancelled during compile when command returns then final state remains canceled`() = runTest {
+        val packageName = "com.example.cancel"
+        val runId = 800L
+        val step = optimizationStep(id = 51L, runId = runId, stepIndex = 0, packageName = packageName)
+        val command = ShellCommandSpec.PackageCompile(
+            packageName = packageName,
+            mode = "speed-profile",
+            force = true
+        )
+
+        coEvery { packageQuery.queryInstalledPackages() } returns listOf(packageName)
+        coEvery { optimizationStepDao.findLatestResumableRunId("SPEED_PROFILE", true) } returns null
+        coJustRun { optimizationStepDao.insertAll(any()) }
+        coEvery { optimizationStepDao.getStepsForRun(any()) } returns listOf(step)
+        coJustRun { optimizationStepDao.markRunning(step.id, "verify", any()) }
+        coJustRun { optimizationStepDao.markSucceeded(any(), any(), any(), any(), any(), any()) }
+        coJustRun { optimizationStepDao.markRunCanceled(any(), any()) }
+        coEvery {
+            compilationResolver.queryPackageCompilationInfo(packageName, "speed-profile")
+        } returnsMany listOf(
+            compilationInfo(packageName, compilerFilter = "verify"),
+            compilationInfo(packageName, compilerFilter = "speed-profile", needsOptimization = false)
+        )
+        coEvery { shellDataSource.executeCommandDetailed(command) } coAnswers {
+            repository.cancelOptimization()
+            Result.success(ShellCommandResult(exitCode = 0, stdout = "Success", stderr = ""))
+        }
+        stubPackageDump(packageName, "speed-profile")
+
+        val result = repository.executeOptimizationCommand(
+            mode = AppOptimizationType.SPEED_PROFILE,
+            forceOptimize = true
+        )
+
+        assertTrue(result is Resource.Success)
+        assertFalse(repository.optimizationProgress.value.isRunning)
+        assertEquals("", repository.optimizationProgress.value.currentAppPackage)
+        assertTrue(repository.optimizationProgress.value.result is OptimizationResult.Canceled)
+        coVerify(exactly = 1) { optimizationStepDao.markRunCanceled(any(), any()) }
+    }
+
+    @Test
+    fun `given analysis is cancelled during scan when loop checks cancellation then scan does not finalize as successful`() = runTest {
+        val firstPackage = "com.example.first"
+        val secondPackage = "com.example.second"
+
+        coEvery { packageQuery.queryInstalledPackages() } returns listOf(firstPackage, secondPackage)
+        coEvery {
+            compilationResolver.queryPackageCompilationInfo(firstPackage, "speed-profile")
+        } answers {
+            runBlocking { repository.cancelAnalysis() }
+            compilationInfo(firstPackage, compilerFilter = "verify")
+        }
+
+        val result = repository.analyzeOptimizationStatus(AppOptimizationType.SPEED_PROFILE)
+
+        assertTrue(result is Resource.Error)
+        assertFalse(repository.optimizationAnalysis.value.isScanning)
+        assertEquals("", repository.optimizationAnalysis.value.currentPackage)
+        assertFalse(repository.optimizationAnalysis.value.hasScanned)
+        coVerify(exactly = 0) {
+            compilationResolver.queryPackageCompilationInfo(secondPackage, "speed-profile")
+        }
+    }
+
+    @Test
+    fun `given worker cancellation interrupts compile command when stop requested then result is canceled not failed`() = runTest {
+        val packageName = "com.example.interrupted"
+        val step = optimizationStep(id = 61L, runId = 900L, stepIndex = 0, packageName = packageName)
+        val command = ShellCommandSpec.PackageCompile(
+            packageName = packageName,
+            mode = "speed-profile",
+            force = true
+        )
+
+        coEvery { packageQuery.queryInstalledPackages() } returns listOf(packageName)
+        coEvery { optimizationStepDao.findLatestResumableRunId("SPEED_PROFILE", true) } returns null
+        coJustRun { optimizationStepDao.insertAll(any()) }
+        coEvery { optimizationStepDao.getStepsForRun(any()) } returns listOf(step)
+        coJustRun { optimizationStepDao.markRunning(step.id, "verify", any()) }
+        coEvery {
+            compilationResolver.queryPackageCompilationInfo(packageName, "speed-profile")
+        } returns compilationInfo(packageName, compilerFilter = "verify")
+        coEvery { shellDataSource.executeCommandDetailed(command) } coAnswers {
+            // Stop flow: repository-side cancel lands first, then WorkManager
+            // cancellation aborts the in-flight shell command.
+            repository.cancelOptimization()
+            throw CancellationException("Worker cancelled")
+        }
+
+        val result = repository.executeOptimizationCommand(
+            mode = AppOptimizationType.SPEED_PROFILE,
+            forceOptimize = true
+        )
+
+        assertTrue(result is Resource.Success)
+        assertFalse(repository.optimizationProgress.value.isRunning)
+        assertEquals("", repository.optimizationProgress.value.currentAppPackage)
+        assertTrue(repository.optimizationProgress.value.result is OptimizationResult.Canceled)
+        assertEquals(0, repository.optimizationProgress.value.failedOrRefusedCount)
+    }
+
+    @Test
+    fun `given cancelled command surfaces as result failure then package is not counted as failed and run is canceled`() = runTest {
+        val packageName = "com.example.wrappedcancel"
+        val step = optimizationStep(id = 62L, runId = 901L, stepIndex = 0, packageName = packageName)
+        val command = ShellCommandSpec.PackageCompile(
+            packageName = packageName,
+            mode = "speed-profile",
+            force = true
+        )
+
+        coEvery { packageQuery.queryInstalledPackages() } returns listOf(packageName)
+        coEvery { optimizationStepDao.findLatestResumableRunId("SPEED_PROFILE", true) } returns null
+        coJustRun { optimizationStepDao.insertAll(any()) }
+        coEvery { optimizationStepDao.getStepsForRun(any()) } returns listOf(step)
+        coJustRun { optimizationStepDao.markRunning(step.id, "verify", any()) }
+        coEvery {
+            compilationResolver.queryPackageCompilationInfo(packageName, "speed-profile")
+        } returns compilationInfo(packageName, compilerFilter = "verify")
+        // The shell layer wraps execution in runCatching, so worker
+        // cancellation can arrive as Result.failure(CancellationException).
+        coEvery { shellDataSource.executeCommandDetailed(command) } returns
+            Result.failure(CancellationException("Worker cancelled"))
+
+        val result = repository.executeOptimizationCommand(
+            mode = AppOptimizationType.SPEED_PROFILE,
+            forceOptimize = true
+        )
+
+        assertTrue(result is Resource.Success)
+        assertTrue(repository.optimizationProgress.value.result is OptimizationResult.Canceled)
+        assertEquals(0, repository.optimizationProgress.value.failedOrRefusedCount)
+        coVerify(exactly = 0) {
+            optimizationStepDao.markFailed(any(), any(), any(), any(), any())
+        }
+    }
+
+    @Test
+    fun `given worker cancellation interrupts scan then analysis stops without a failure log`() = runTest {
+        val firstPackage = "com.example.first"
+
+        coEvery { packageQuery.queryInstalledPackages() } returns listOf(firstPackage)
+        coEvery {
+            compilationResolver.queryPackageCompilationInfo(firstPackage, "speed-profile")
+        } answers {
+            throw CancellationException("Worker cancelled")
+        }
+
+        val result = repository.analyzeOptimizationStatus(AppOptimizationType.SPEED_PROFILE)
+
+        assertTrue(result is Resource.Error)
+        assertFalse(repository.optimizationAnalysis.value.isScanning)
+        assertEquals("", repository.optimizationAnalysis.value.currentPackage)
+        assertFalse(repository.optimizationAnalysis.value.hasScanned)
+        // A user-visible ERROR entry would misreport the cancellation as a failure.
+        assertFalse(repository.logEntries.value.any { it.type == LogEntryType.ERROR })
     }
 
     private fun optimizationStep(
@@ -437,6 +605,22 @@ class AdbRepositoryImplTest {
         oatFileExists = compilerFilter != "verify",
         needsOptimization = needsOptimization
     )
+
+    private fun stubPackageDump(packageName: String, compilerFilter: String) {
+        coEvery {
+            shellDataSource.executeCommandDetailed(ShellCommandSpec.PackageDump(packageName))
+        } returns Result.success(
+            ShellCommandResult(
+                exitCode = 0,
+                stdout = """
+                    Dexopt state:
+                      [$packageName]
+                        arm64: [status=$compilerFilter] [reason=cmdline]
+                """.trimIndent(),
+                stderr = ""
+            )
+        )
+    }
 
     private fun allowedDeviceGuardSnapshot(
         batteryPercent: Int = 80,

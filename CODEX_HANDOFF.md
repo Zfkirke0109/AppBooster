@@ -97,3 +97,47 @@ cd "C:\Users\zachk\OneDrive\Documents\OptiDroid Galaxy"
 .\gradlew.bat :app:assembleDebug --no-daemon --max-workers=1
 # then install app\build\outputs\apk\debug\app-debug.apk on the S23 Ultra
 ```
+
+---
+
+# Fable continuation after Codex 5.6 Sol usage limit (2026-07-10)
+
+Fable resumed with Codex's Stop/Cancel work sitting uncommitted in the tree
+(preserved to `FABLE_RESUME_AFTER_CODEX_USAGE_LIMIT.patch` before any edit).
+
+## Files inspected (all of `git diff --name-only`)
+
+- `ExampleInstrumentedTest.kt` — kept: asserts `BuildConfig.APPLICATION_ID`
+  instead of the hardcoded namespace (fixes the only connected-test failure).
+- `AdbRepositoryImpl.kt` — Codex moved the cancel flags before the
+  early-returns in `cancelOptimization()`/`cancelAnalysis()`; kept.
+- `StopOptimizationUseCase.kt` / `StopAnalysisUseCase.kt` — repository-first
+  cancel ordering; kept.
+- `OptimizationWorkerStopReceiver.kt` — repository cancel before
+  `cancelWorkById`; kept.
+- `AdbRepositoryImplTest.kt` — Codex's `stubPackageDump` helper, flag-path
+  cancel test, and scan-cancel test; kept.
+- `OptimizationAnalysisTest.kt` — failed/unverified `allOptimized` cases; kept.
+- `StopOptimizationUseCaseTest.kt` / new `StopAnalysisUseCaseTest.kt` —
+  order-asserting stop tests; kept.
+
+## Files changed by Fable on top of Codex
+
+- `AdbRepositoryImpl.kt` — the missing half of the device-observed bug:
+  `executeOptimizationCommand`'s failure handler now ends the run as
+  `Canceled` (never `Failed`) when the throwable is a `CancellationException`
+  or a cancel was requested; a cancelled shell command surfacing as
+  `Result.failure(CancellationException)` is rethrown instead of counted as
+  a failed package; `analyzeOptimizationStatus` no longer logs
+  `ANALYSIS_FAILED` for a cancelled scan (returns `ADB_ANALYSIS_CANCELLED`).
+- `AdbRepositoryImplTest.kt` — three new tests for the exception paths.
+- `docs/s23-ultra-validation.md` — appended the dated device-validation
+  results section.
+
+## Status at handoff
+
+- Focused unit tests (Stop*, AdbRepositoryImpl, OptimizationAnalysis): green.
+- Full unit suite / assemble / connected / runAllTests: recorded in the
+  final session report and PR #4 checklist.
+- Remaining manual recheck: install fixed build, Stop a run, expect the
+  Canceled card (not "Optimization failed").
