@@ -338,12 +338,12 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `given settings emits FULL_OPTIMIZATION when observed then model reflects that mode`() = runTest {
-        every { observeAppOptimizationTypeUseCase() } returns flowOf(Resource.Success(AppOptimizationType.FULL_OPTIMIZATION))
+    fun `given settings emits HEAVY_APPS_SPEED when observed then model reflects that mode`() = runTest {
+        every { observeAppOptimizationTypeUseCase() } returns flowOf(Resource.Success(AppOptimizationType.HEAVY_APPS_SPEED))
         val vm = createViewModel()
         advanceUntilIdle()
 
-        assertEquals(AppOptimizationType.FULL_OPTIMIZATION, vm.uiState.value.data?.optimizationMode)
+        assertEquals(AppOptimizationType.HEAVY_APPS_SPEED, vm.uiState.value.data?.optimizationMode)
     }
 
     @Test

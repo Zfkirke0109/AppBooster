@@ -37,6 +37,69 @@ class ShellCommandSpecTest {
     }
 
     @Test
+    fun `given normal speed compile spec when argv built then omits full scope`() {
+        val spec = ShellCommandSpec.PackageCompile(
+            packageName = "com.example.app",
+            mode = "speed",
+            force = true
+        )
+
+        assertEquals(
+            listOf("cmd", "package", "compile", "-m", "speed", "-f", "com.example.app"),
+            spec.argv
+        )
+        assertTrue(ShellCommandSpec.isAllowedArgv(spec.argv))
+    }
+
+    @Test
+    fun `given full speed compile spec when argv built then includes full scope`() {
+        val spec = ShellCommandSpec.PackageCompile(
+            packageName = "com.example.app",
+            mode = "speed",
+            force = true,
+            full = true
+        )
+
+        assertEquals(
+            listOf("cmd", "package", "compile", "-m", "speed", "-f", "--full", "com.example.app"),
+            spec.argv
+        )
+        assertTrue(ShellCommandSpec.isAllowedArgv(spec.argv))
+    }
+
+    @Test
+    fun `given verbose full speed compile spec when argv built then includes verbose flag`() {
+        val spec = ShellCommandSpec.PackageCompile(
+            packageName = "com.example.app",
+            mode = "speed",
+            force = true,
+            full = true,
+            verbose = true
+        )
+
+        assertEquals(
+            listOf("cmd", "package", "compile", "-m", "speed", "-f", "--full", "-v", "com.example.app"),
+            spec.argv
+        )
+        assertTrue(ShellCommandSpec.isAllowedArgv(spec.argv))
+    }
+
+    @Test
+    fun `given package help specs when checked then allowed`() {
+        assertTrue(ShellCommandSpec.isAllowedArgv(ShellCommandSpec.PackageHelp.argv))
+        assertTrue(ShellCommandSpec.isAllowedArgv(ShellCommandSpec.PackageCompileHelp.argv))
+    }
+
+    @Test
+    fun `given package dump spec when checked then validates package name`() {
+        val spec = ShellCommandSpec.PackageDump("com.example.app")
+
+        assertEquals(listOf("cmd", "package", "dump", "com.example.app"), spec.argv)
+        assertTrue(ShellCommandSpec.isAllowedArgv(spec.argv))
+        assertFalse(ShellCommandSpec.isAllowedArgv(listOf("cmd", "package", "dump", "com.example;reboot")))
+    }
+
+    @Test
     fun `given unsafe argv when checked then rejected`() {
         val unsafe = listOf("sh", "-c", "cmd package compile -m speed-profile -f com.example.app")
 

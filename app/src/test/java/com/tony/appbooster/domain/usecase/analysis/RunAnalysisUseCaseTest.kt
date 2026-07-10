@@ -55,7 +55,7 @@ class RunAnalysisUseCaseTest {
         val error = ResourceError.LogicError("ADB not connected")
         coEvery { repository.analyzeOptimizationStatus(any()) } returns Resource.Error(error)
 
-        val result = useCase(AppOptimizationType.FULL_OPTIMIZATION)
+        val result = useCase(AppOptimizationType.HEAVY_APPS_SPEED)
 
         assertTrue(result is Resource.Error)
         assertEquals(error, (result as Resource.Error).data)
@@ -64,12 +64,12 @@ class RunAnalysisUseCaseTest {
     @Test
     fun `given full optimization mode when invoke then passes mode to repository`() = runTest {
         val analysis = OptimizationAnalysis()
-        coEvery { repository.analyzeOptimizationStatus(AppOptimizationType.FULL_OPTIMIZATION) } returns
+        coEvery { repository.analyzeOptimizationStatus(AppOptimizationType.HEAVY_APPS_SPEED) } returns
             Resource.Success(analysis)
 
-        useCase(AppOptimizationType.FULL_OPTIMIZATION)
+        useCase(AppOptimizationType.HEAVY_APPS_SPEED)
 
-        coVerify(exactly = 1) { repository.analyzeOptimizationStatus(AppOptimizationType.FULL_OPTIMIZATION) }
+        coVerify(exactly = 1) { repository.analyzeOptimizationStatus(AppOptimizationType.HEAVY_APPS_SPEED) }
     }
 }
 

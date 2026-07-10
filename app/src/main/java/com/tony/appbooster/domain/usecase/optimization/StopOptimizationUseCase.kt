@@ -10,8 +10,8 @@ import com.tony.appbooster.domain.model.common.Resource
  * - Prevents drift where one path cancels WorkManager but forgets repository-side cancellation.
  *
  * Stop semantics:
- * 1) Cancel scheduled foreground work (removes notification / stops Worker).
- * 2) Cancel repository-side in-flight operations and update UI state immediately.
+ * 1) Cancel repository-side in-flight operations and update UI state immediately.
+ * 2) Cancel scheduled foreground work (removes notification / stops Worker).
  *
  * @property cancelOptimizationWorkUseCase Cancels WorkManager-backed optimization work.
  * @property cancelOptimizationUseCase Cancels repository-side optimization loop.
@@ -27,7 +27,8 @@ class StopOptimizationUseCase(
      * @return [Resource.Success] when stop was requested.
      */
     suspend operator fun invoke(): Resource<Unit> {
+        val result = cancelOptimizationUseCase()
         cancelOptimizationWorkUseCase()
-        return cancelOptimizationUseCase()
+        return result
     }
 }

@@ -62,7 +62,7 @@ class StartOptimizationUseCaseTest {
         coEvery { connectAdbUseCase() } returns Resource.Success(Unit)
         coEvery { startOptimizationWorkUseCase(any()) } returns Resource.Error(workError)
 
-        val result = useCase(AppOptimizationType.FULL_OPTIMIZATION)
+        val result = useCase(AppOptimizationType.HEAVY_APPS_SPEED)
 
         assertTrue(result is Resource.Error)
         assertEquals(workError, (result as Resource.Error).data)

@@ -15,8 +15,13 @@ package com.tony.appbooster.domain.model.common
  * @property result Final result of the most recent run.
  * @property currentAppPackage The package name of the app currently being optimized.
  * @property progress Progress value from 0.0 to 1.0.
- * @property processedCount Number of apps already optimized.
- * @property skippedCount Number of apps skipped (already optimized recently).
+ * @property processedCount Number of target packages processed for progress.
+ * @property skippedCount Number of apps skipped before compile (already optimized or no profile).
+ * @property optimizedSucceededCount Number of target packages verified after compile.
+ * @property alreadyOptimizedCount Number of target packages skipped because they already matched.
+ * @property skippedNoProfileCount Number of speed-profile targets skipped because no runtime profile exists.
+ * @property failedOrRefusedCount Number of target packages whose compile command failed or was refused.
+ * @property unverifiedCount Number of target packages whose command returned success but post-run evidence was unclear.
  * @property totalCount Total number of apps to optimize.
  */
 data class OptimizationProgress(
@@ -27,6 +32,11 @@ data class OptimizationProgress(
     val progress: Float = 0f,
     val processedCount: Int = 0,
     val skippedCount: Int = 0,
+    val optimizedSucceededCount: Int = 0,
+    val alreadyOptimizedCount: Int = 0,
+    val skippedNoProfileCount: Int = 0,
+    val failedOrRefusedCount: Int = 0,
+    val unverifiedCount: Int = 0,
     val totalCount: Int = 0
 )
 
@@ -44,6 +54,12 @@ sealed interface OptimizationResult {
      * The optimization flow finished normally.
      */
     data object Completed : OptimizationResult
+
+    /**
+     * The optimization flow finished, but one or more packages failed/refused
+     * the command or could not be verified with ART/package-manager evidence.
+     */
+    data object CompletedWithIssues : OptimizationResult
 
     /**
      * The optimization flow was stopped before completion.

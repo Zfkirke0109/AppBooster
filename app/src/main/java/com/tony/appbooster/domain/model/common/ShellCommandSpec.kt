@@ -41,6 +41,16 @@ sealed interface ShellCommandSpec {
         override val displayCommand: String = argv.joinToString(" ")
     }
 
+    data object PackageHelp : ShellCommandSpec {
+        override val argv: List<String> = listOf("cmd", "package", "help")
+        override val displayCommand: String = argv.joinToString(" ")
+    }
+
+    data object PackageCompileHelp : ShellCommandSpec {
+        override val argv: List<String> = listOf("cmd", "package", "compile", "--help")
+        override val displayCommand: String = argv.joinToString(" ")
+    }
+
     data class DumpsysPackageForPackage(
         val packageName: String
     ) : ShellCommandSpec {
@@ -52,10 +62,23 @@ sealed interface ShellCommandSpec {
         override val displayCommand: String = argv.joinToString(" ")
     }
 
+    data class PackageDump(
+        val packageName: String
+    ) : ShellCommandSpec {
+        init {
+            PackageNameValidator.requireValid(packageName)
+        }
+
+        override val argv: List<String> = listOf("cmd", "package", "dump", packageName)
+        override val displayCommand: String = argv.joinToString(" ")
+    }
+
     data class PackageCompile(
         val packageName: String,
         val mode: String,
-        val force: Boolean = true
+        val force: Boolean = true,
+        val full: Boolean = false,
+        val verbose: Boolean = false
     ) : ShellCommandSpec {
         init {
             PackageNameValidator.requireValid(packageName)
@@ -69,6 +92,8 @@ sealed interface ShellCommandSpec {
             add("-m")
             add(mode)
             if (force) add("-f")
+            if (full) add("--full")
+            if (verbose) add("-v")
             add(packageName)
         }
         override val displayCommand: String = argv.joinToString(" ")
@@ -108,7 +133,7 @@ sealed interface ShellCommandSpec {
     }
 
     companion object {
-        private val COMPILE_MODES = setOf("speed-profile", "speed")
+        private val COMPILE_MODES = setOf("speed-profile", "speed", "everything")
 
         fun isAllowedArgv(argv: List<String>): Boolean {
             return when {
@@ -116,11 +141,14 @@ sealed interface ShellCommandSpec {
                 argv == ListPackages.argv -> true
                 argv == DumpsysPackageDexopt.argv -> true
                 argv == DumpsysThermalService.argv -> true
+                argv == PackageHelp.argv -> true
+                argv == PackageCompileHelp.argv -> true
                 argv.size == 3 &&
                     argv[0] == "dumpsys" &&
                     argv[1] == "package" ->
                     PackageNameValidator.isValid(argv[2])
 
+                isAllowedPackageDump(argv) -> true
                 isAllowedPackageCompile(argv) -> true
                 isAllowedPackageCompileCheck(argv) -> true
                 isAllowedPackageCompileReset(argv) -> true
@@ -129,16 +157,22 @@ sealed interface ShellCommandSpec {
             }
         }
 
+        private fun isAllowedPackageDump(argv: List<String>): Boolean =
+            argv.size == 4 &&
+                argv.take(3) == listOf("cmd", "package", "dump") &&
+                PackageNameValidator.isValid(argv[3])
+
         private fun isAllowedPackageCompile(argv: List<String>): Boolean {
-            if (argv.size !in setOf(6, 7)) return false
+            if (argv.size !in 6..9) return false
             if (argv.take(5) != listOf("cmd", "package", "compile", "-m", argv[4])) return false
             if (argv[4] !in COMPILE_MODES) return false
 
-            return when (argv.size) {
-                6 -> PackageNameValidator.isValid(argv[5])
-                7 -> argv[5] == "-f" && PackageNameValidator.isValid(argv[6])
-                else -> false
-            }
+            val options = argv.subList(5, argv.lastIndex)
+            val packageName = argv.last()
+            val allowedOptions = setOf("-f", "--full", "-v")
+            return options.all { it in allowedOptions } &&
+                options.distinct().size == options.size &&
+                PackageNameValidator.isValid(packageName)
         }
 
         private fun isAllowedPackageCompileCheck(argv: List<String>): Boolean =

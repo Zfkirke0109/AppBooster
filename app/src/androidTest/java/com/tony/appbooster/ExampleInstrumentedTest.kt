@@ -17,8 +17,11 @@ import org.junit.Assert.*
 class ExampleInstrumentedTest {
     @Test
     fun useAppContext() {
-        // Context of the app under test.
+        // Context of the app under test. The applicationId
+        // (com.zfkirke0109.galaxyoptidroid) intentionally differs from the
+        // source namespace (com.tony.appbooster), so compare against
+        // BuildConfig rather than a hardcoded literal.
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
-        assertEquals("com.tony.appbooster", appContext.packageName)
+        assertEquals(BuildConfig.APPLICATION_ID, appContext.packageName)
     }
 }

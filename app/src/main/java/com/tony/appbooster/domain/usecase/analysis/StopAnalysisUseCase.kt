@@ -9,8 +9,8 @@ import com.tony.appbooster.domain.model.common.Resource
  * - Cancels both background work and repository-side state promptly.
  *
  * Stop semantics:
- * 1) Cancel scheduled foreground work (removes notification / stops Worker).
- * 2) Cancel repository-side analysis loop and update UI state immediately.
+ * 1) Cancel repository-side analysis loop and update UI state immediately.
+ * 2) Cancel scheduled foreground work (removes notification / stops Worker).
  *
  * @property cancelAnalysisWorkUseCase Cancels WorkManager-backed analysis work.
  * @property cancelAnalysisUseCase Cancels repository-side analysis loop.
@@ -26,7 +26,8 @@ class StopAnalysisUseCase(
      * @return [Resource.Success] when stop was requested.
      */
     suspend operator fun invoke(): Resource<Unit> {
+        val result = cancelAnalysisUseCase()
         cancelAnalysisWorkUseCase()
-        return cancelAnalysisUseCase()
+        return result
     }
 }

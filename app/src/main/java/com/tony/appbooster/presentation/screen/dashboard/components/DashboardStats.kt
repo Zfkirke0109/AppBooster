@@ -50,6 +50,8 @@ fun OptimizationStatsRow(
     needsOptimizationCount: Int,
     optimizedCount: Int,
     noProfileCount: Int = 0,
+    failedCount: Int = 0,
+    unverifiedCount: Int = 0,
     showNoProfile: Boolean = true
 ) {
     Surface(
@@ -79,6 +81,20 @@ fun OptimizationStatsRow(
                     count = noProfileCount,
                     label = stringResource(R.string.analysis_card_no_profile),
                     dotColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+            }
+            if (failedCount > 0) {
+                StatRow(
+                    count = failedCount,
+                    label = stringResource(R.string.analysis_card_failed_refused),
+                    dotColor = MaterialTheme.colorScheme.error
+                )
+            }
+            if (unverifiedCount > 0) {
+                StatRow(
+                    count = unverifiedCount,
+                    label = stringResource(R.string.analysis_card_unverified),
+                    dotColor = MaterialTheme.colorScheme.secondary
                 )
             }
         }

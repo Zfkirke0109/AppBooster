@@ -95,7 +95,7 @@
     <string name="settings_section_optimization_title">Profilo di ottimizzazione</string>
     <string name="settings_section_optimization_subtitle">Scegli compilazione bilanciata o velocità mirata per app pesanti</string>
     <string name="settings_section_heavy_targets_title">Target Gaming / app pesanti</string>
-    <string name="settings_section_heavy_targets_subtitle">Solo questi pacchetti usano la compilazione speed completa</string>
+    <string name="settings_section_heavy_targets_subtitle">Solo questi pacchetti usano la compilazione speed</string>
     <string name="settings_section_rollback_title">Rollback</string>
     <string name="settings_section_rollback_subtitle">Reimposta app ottimizzate che hanno problemi dopo la compilazione</string>
     <string name="settings_section_shizuku_title">Stato Shizuku</string>
@@ -105,8 +105,12 @@
 
     <string name="settings_opt_speed_title">Bilanciato quotidiano</string>
     <string name="settings_opt_speed_description">Usa speed-profile per affidabilità quotidiana, meno calore e uso ragionevole dello spazio.</string>
-    <string name="settings_opt_full_title">Gaming / app pesanti</string>
-    <string name="settings_opt_full_description">Usa la compilazione speed completa solo per giochi, fotocamera, browser o altre app pesanti selezionate.</string>
+    <string name="settings_opt_full_dex2oat_title">Full DEXtoOAT Speed</string>
+    <string name="settings_opt_full_dex2oat_description">Ottimizzazione ART aggressiva in modalità speed su tutte le app idonee.</string>
+    <string name="settings_opt_advanced_full_title">Full Compile / DEXopt All</string>
+    <string name="settings_opt_advanced_full_description">Dexopt completo di tutte le app idonee usando speed con --full, come raccomandato da questa build Android.</string>
+    <string name="settings_opt_heavy_title">Gaming / app pesanti</string>
+    <string name="settings_opt_heavy_description">Usa la modalità speed solo per giochi, fotocamera, browser o altre app pesanti selezionate.</string>
     <string name="settings_heavy_package_label">Nome pacchetto</string>
     <string name="settings_heavy_package_hint">Esempi: com.sec.android.app.camera, com.android.chrome</string>
     <string name="settings_heavy_empty">Nessuna app pesante selezionata. La modalità Gaming / app pesanti resta in pausa finché non aggiungi almeno un pacchetto.</string>
@@ -148,8 +152,12 @@
 
     <string name="dashboard_ready_speed_profile_title">Bilanciato quotidiano</string>
     <string name="dashboard_ready_speed_profile_description">Ottimizza le app in base ai pattern d\'uso</string>
-    <string name="dashboard_ready_full_optimization_title">Gaming / app pesanti</string>
-    <string name="dashboard_ready_full_optimization_description">Compilazione speed completa solo per app selezionate</string>
+    <string name="dashboard_ready_full_dex2oat_title">Full DEXtoOAT Speed</string>
+    <string name="dashboard_ready_full_dex2oat_description">Esegue la modalità speed su tutte le app idonee</string>
+    <string name="dashboard_ready_advanced_full_title">Full Compile / DEXopt All</string>
+    <string name="dashboard_ready_advanced_full_description">Dexopt completo delle app idonee usando speed con --full</string>
+    <string name="dashboard_ready_heavy_apps_title">Gaming / app pesanti</string>
+    <string name="dashboard_ready_heavy_apps_description">Compilazione speed solo per app pesanti selezionate</string>
 
     <string name="about_app_title">Galaxy OptiDroid</string>
     <string name="about_version_fallback">1.0.0</string>
@@ -178,7 +186,7 @@
     <string name="survival_error_title">Controllo stato fallito</string>
     <string name="survival_value_unknown">Sconosciuto</string>
     <string name="survival_battery_title">Protezione batteria</string>
-    <string name="survival_battery_description">L\'ottimizzazione va in pausa sotto il 35%% di batteria per ridurre calore e rischio di spegnimento.</string>
+    <string name="survival_battery_description">L\'ottimizzazione va in pausa sotto il 35% di batteria per ridurre calore e rischio di spegnimento.</string>
     <string name="survival_thermal_title">Protezione termica</string>
     <string name="survival_thermal_description">L\'ottimizzazione va in pausa quando dumpsys thermalservice segnala severe o superiore.</string>
     <string name="survival_standby_title">Bucket standby</string>

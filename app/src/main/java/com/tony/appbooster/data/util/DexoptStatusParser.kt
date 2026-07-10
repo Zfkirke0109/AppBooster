@@ -86,9 +86,29 @@ internal object DexoptStatusParser {
     }
 
     /**
+     * Parses the strongest compiler-filter signal from verbose compile or package dump output.
+     */
+    fun parseCompilerFilterFromOutput(output: String): String? {
+        if (output.isBlank()) return null
+
+        output.lineSequence().forEach { line ->
+            parseCompilerFilterFromLine(line.trim().lowercase())?.let { return it }
+        }
+        return null
+    }
+
+    /**
      * Extracts a compiler filter keyword from a single lowercased line.
      */
     fun parseCompilerFilterFromLine(lowercasedLine: String): String? {
+        val exactAssignment = Regex(
+            """(?:actualcompilerfilter|compiler[-_ ]?filter|filter|status)\s*=\s*(speed-profile|everything|speed|verify|quicken|run-from-apk|extract)"""
+        ).find(lowercasedLine)?.groupValues?.getOrNull(1)
+
+        if (exactAssignment != null) {
+            return if (exactAssignment == "run-from-apk") "extract" else exactAssignment
+        }
+
         return when {
             lowercasedLine.contains("speed-profile") -> "speed-profile"
             lowercasedLine.contains("everything") -> "everything"

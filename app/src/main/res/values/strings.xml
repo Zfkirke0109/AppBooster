@@ -86,7 +86,9 @@
     <string name="dashboard_result_canceled_title">Optimization canceled</string>
     <string name="dashboard_result_failed_title">Optimization failed</string>
     <string name="dashboard_result_paused_title">Optimization paused</string>
-    <string name="dashboard_result_completed_count">%1$d of %2$d apps optimized</string>
+    <string name="dashboard_result_completed_count">%1$d of %2$d apps verified optimized</string>
+    <string name="dashboard_result_completed_issues_title">Finished with issues</string>
+    <string name="dashboard_result_completed_issues_count">%1$d verified, %2$d failed/refused, %3$d unverified</string>
     <string name="dashboard_result_canceled_count">%1$d of %2$d apps optimized before stopping</string>
     <string name="dashboard_result_failed_count">%1$d of %2$d apps optimized before the failure</string>
 
@@ -137,9 +139,9 @@
     <!-- Settings -->
     <string name="settings_top_bar_title">Settings</string>
     <string name="settings_section_optimization_title">Optimization Profile</string>
-    <string name="settings_section_optimization_subtitle">Choose balanced daily compilation or targeted heavy-app speed</string>
+    <string name="settings_section_optimization_subtitle">Choose profile-guided, full DEXtoOAT speed, or selected heavy-app compilation</string>
     <string name="settings_section_heavy_targets_title">Gaming / Heavy Apps Targets</string>
-    <string name="settings_section_heavy_targets_subtitle">Only these packages use full speed compilation</string>
+    <string name="settings_section_heavy_targets_subtitle">Only these packages use speed compilation</string>
     <string name="settings_section_rollback_title">Rollback</string>
     <string name="settings_section_rollback_subtitle">Reset optimized apps that misbehave after compilation</string>
     <string name="settings_section_shizuku_title">Shizuku Status</string>
@@ -147,10 +149,14 @@
     <string name="settings_section_about_title">About</string>
     <string name="settings_section_about_subtitle">App information</string>
 
-    <string name="settings_opt_speed_title">Balanced Daily</string>
-    <string name="settings_opt_speed_description">Uses speed-profile for daily reliability, lower heat, and reasonable storage use.</string>
-    <string name="settings_opt_full_title">Gaming / Heavy Apps</string>
-    <string name="settings_opt_full_description">Uses full speed compilation only for selected games, camera, browsers, or other heavy apps.</string>
+    <string name="settings_opt_speed_title">Speed Profile</string>
+    <string name="settings_opt_speed_description">Balanced ART optimization using profile-guided speed-profile compilation.</string>
+    <string name="settings_opt_full_dex2oat_title">Full DEXtoOAT Speed</string>
+    <string name="settings_opt_full_dex2oat_description">Aggressive ART optimization using speed mode across all eligible apps.</string>
+    <string name="settings_opt_advanced_full_title">Full Compile / DEXopt All</string>
+    <string name="settings_opt_advanced_full_description">Complete dexopt of all eligible apps using speed with --full, as recommended by this Android build.</string>
+    <string name="settings_opt_heavy_title">Gaming / Heavy Apps</string>
+    <string name="settings_opt_heavy_description">Uses speed mode only for selected games, camera, browsers, or other heavy apps.</string>
     <string name="settings_heavy_package_label">Package name</string>
     <string name="settings_heavy_package_hint">Examples: com.sec.android.app.camera, com.android.chrome</string>
     <string name="settings_heavy_empty">No heavy apps selected. Gaming / Heavy Apps mode will pause until you add at least one package.</string>
@@ -194,8 +200,12 @@
 
     <string name="dashboard_ready_speed_profile_title">Speed Profile</string>
     <string name="dashboard_ready_speed_profile_description">Optimize apps based on usage patterns</string>
-    <string name="dashboard_ready_full_optimization_title">Gaming / Heavy Apps</string>
-    <string name="dashboard_ready_full_optimization_description">Full speed compilation for selected apps only</string>
+    <string name="dashboard_ready_full_dex2oat_title">Full DEXtoOAT Speed</string>
+    <string name="dashboard_ready_full_dex2oat_description">Runs speed mode across all eligible apps</string>
+    <string name="dashboard_ready_advanced_full_title">Full Compile / DEXopt All</string>
+    <string name="dashboard_ready_advanced_full_description">Full dexopt of all eligible apps using speed with --full</string>
+    <string name="dashboard_ready_heavy_apps_title">Gaming / Heavy Apps</string>
+    <string name="dashboard_ready_heavy_apps_description">Runs speed compilation only for selected heavy apps</string>
 
     <string name="about_app_title">Galaxy OptiDroid</string>
     <string name="about_version_fallback">1.0.0</string>
@@ -226,7 +236,7 @@
     <string name="survival_error_title">Status check failed</string>
     <string name="survival_value_unknown">Unknown</string>
     <string name="survival_battery_title">Battery guard</string>
-    <string name="survival_battery_description">Optimization pauses below 35%% battery to reduce heat and shutdown risk.</string>
+    <string name="survival_battery_description">Optimization pauses below 35% battery to reduce heat and shutdown risk.</string>
     <string name="survival_thermal_title">Thermal guard</string>
     <string name="survival_thermal_description">Optimization pauses when dumpsys thermalservice reports severe or higher.</string>
     <string name="survival_standby_title">Standby bucket</string>
@@ -252,6 +262,8 @@
     <string name="analysis_card_needs_optimization">Needs Optimization</string>
     <string name="analysis_card_optimized">Optimized</string>
     <string name="analysis_card_no_profile">No Profile</string>
+    <string name="analysis_card_failed_refused">Failed / Refused</string>
+    <string name="analysis_card_unverified">Unverified</string>
     <string name="analysis_view_details">View Details</string>
 
     <!-- Activity feed UI -->

@@ -27,6 +27,8 @@ data class OptimizationAnalysis(
     val appsNeedingOptimization: Int = 0,
     val appsAlreadyOptimized: Int = 0,
     val appsWithNoProfile: Int = 0,
+    val failedOrRefusedCount: Int = 0,
+    val unverifiedCount: Int = 0,
     val packagesNeedingOptimization: List<String> = emptyList(),
     val isScanning: Boolean = false,
     val currentPackage: String = "",
@@ -43,7 +45,12 @@ data class OptimizationAnalysis(
      * Whether all apps are already optimized (nothing to do).
      */
     val allOptimized: Boolean
-        get() = hasScanned && appsNeedingOptimization == 0 && appsAlreadyOptimized > 0
+        get() = hasScanned &&
+            totalAppsScanned > 0 &&
+            appsNeedingOptimization == 0 &&
+            failedOrRefusedCount == 0 &&
+            unverifiedCount == 0 &&
+            appsAlreadyOptimized > 0
 
     /**
      * Progress of the current scan from 0f to 1f.

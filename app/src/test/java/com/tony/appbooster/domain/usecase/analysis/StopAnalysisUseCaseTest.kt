@@ -1,9 +1,9 @@
-package com.tony.appbooster.domain.usecase.optimization
+package com.tony.appbooster.domain.usecase.analysis
 
 import com.tony.appbooster.domain.model.common.Resource
 import com.tony.appbooster.domain.model.common.ResourceError
 import com.tony.appbooster.domain.repository.AdbRepository
-import com.tony.appbooster.domain.scheduler.OptimizationWorkScheduler
+import com.tony.appbooster.domain.scheduler.AnalysisWorkScheduler
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -16,19 +16,15 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Unit tests for [StopOptimizationUseCase].
- *
- * Verifies that both WorkManager cancellation and repository-side cancellation
- * are always invoked in the correct order, and that the repository result is
- * propagated to the caller.
+ * Unit tests for [StopAnalysisUseCase].
  */
-class StopOptimizationUseCaseTest {
+class StopAnalysisUseCaseTest {
 
-    private lateinit var scheduler: OptimizationWorkScheduler
-    private lateinit var cancelWorkUseCase: CancelOptimizationWorkUseCase
-    private lateinit var cancelRepoUseCase: CancelOptimizationUseCase
+    private lateinit var scheduler: AnalysisWorkScheduler
+    private lateinit var cancelWorkUseCase: CancelAnalysisWorkUseCase
+    private lateinit var cancelRepoUseCase: CancelAnalysisUseCase
     private lateinit var repository: AdbRepository
-    private lateinit var useCase: StopOptimizationUseCase
+    private lateinit var useCase: StopAnalysisUseCase
     private lateinit var calls: MutableList<String>
 
     @Before
@@ -40,15 +36,15 @@ class StopOptimizationUseCaseTest {
                 Unit
             }
         }
-        cancelWorkUseCase = CancelOptimizationWorkUseCase(scheduler)
+        cancelWorkUseCase = CancelAnalysisWorkUseCase(scheduler)
         repository = mockk()
-        cancelRepoUseCase = CancelOptimizationUseCase(repository)
-        useCase = StopOptimizationUseCase(cancelWorkUseCase, cancelRepoUseCase)
+        cancelRepoUseCase = CancelAnalysisUseCase(repository)
+        useCase = StopAnalysisUseCase(cancelWorkUseCase, cancelRepoUseCase)
     }
 
     @Test
-    fun `given both cancellations succeed when invoke then returns success`() = runTest {
-        coEvery { repository.cancelOptimization() } coAnswers {
+    fun `given both cancellations succeed when invoke then repository cancel happens before work cancel`() = runTest {
+        coEvery { repository.cancelAnalysis() } coAnswers {
             calls += "repo"
             Resource.Success(Unit)
         }
@@ -57,14 +53,14 @@ class StopOptimizationUseCaseTest {
 
         assertTrue(result is Resource.Success)
         assertEquals(listOf("repo", "work"), calls)
+        coVerify(exactly = 1) { repository.cancelAnalysis() }
         verify(exactly = 1) { scheduler.cancel() }
-        coVerify(exactly = 1) { repository.cancelOptimization() }
     }
 
     @Test
-    fun `given repository cancellation fails when invoke then propagates error`() = runTest {
+    fun `given repository cancellation fails when invoke then returns repository error and still cancels work`() = runTest {
         val error = ResourceError.LogicError("nothing running")
-        coEvery { repository.cancelOptimization() } coAnswers {
+        coEvery { repository.cancelAnalysis() } coAnswers {
             calls += "repo"
             Resource.Error(error)
         }
@@ -73,7 +69,7 @@ class StopOptimizationUseCaseTest {
 
         assertTrue(result is Resource.Error)
         assertEquals(listOf("repo", "work"), calls)
+        coVerify(exactly = 1) { repository.cancelAnalysis() }
         verify(exactly = 1) { scheduler.cancel() }
     }
 }
-
