@@ -95,7 +95,7 @@
     <string name="settings_section_optimization_title">Profilo di ottimizzazione</string>
     <string name="settings_section_optimization_subtitle">Scegli compilazione bilanciata o velocità mirata per app pesanti</string>
     <string name="settings_section_heavy_targets_title">Target Gaming / app pesanti</string>
-    <string name="settings_section_heavy_targets_subtitle">Solo questi pacchetti usano la compilazione speed completa</string>
+    <string name="settings_section_heavy_targets_subtitle">Solo questi pacchetti usano la compilazione speed</string>
     <string name="settings_section_rollback_title">Rollback</string>
     <string name="settings_section_rollback_subtitle">Reimposta app ottimizzate che hanno problemi dopo la compilazione</string>
     <string name="settings_section_shizuku_title">Stato Shizuku</string>
@@ -186,7 +186,7 @@
     <string name="survival_error_title">Controllo stato fallito</string>
     <string name="survival_value_unknown">Sconosciuto</string>
     <string name="survival_battery_title">Protezione batteria</string>
-    <string name="survival_battery_description">L\'ottimizzazione va in pausa sotto il 35%% di batteria per ridurre calore e rischio di spegnimento.</string>
+    <string name="survival_battery_description">L\'ottimizzazione va in pausa sotto il 35% di batteria per ridurre calore e rischio di spegnimento.</string>
     <string name="survival_thermal_title">Protezione termica</string>
     <string name="survival_thermal_description">L\'ottimizzazione va in pausa quando dumpsys thermalservice segnala severe o superiore.</string>
     <string name="survival_standby_title">Bucket standby</string>

@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@drawable/ic_launcher_background" />
-    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <!-- Full-bleed galaxy artwork; the squircle content sits inside the
+         adaptive safe zone so launcher masks land on the artwork edge. -->
+    <foreground android:drawable="@drawable/ic_launcher_image" />
+    <!-- Themed (Android 13+) icons need a flat single-color layer; keep the
+         original vector, which is also the notification small icon. -->
     <monochrome android:drawable="@drawable/ic_launcher_foreground" />
 </adaptive-icon>

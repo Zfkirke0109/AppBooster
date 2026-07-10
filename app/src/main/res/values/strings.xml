@@ -141,7 +141,7 @@
     <string name="settings_section_optimization_title">Optimization Profile</string>
     <string name="settings_section_optimization_subtitle">Choose profile-guided, full DEXtoOAT speed, or selected heavy-app compilation</string>
     <string name="settings_section_heavy_targets_title">Gaming / Heavy Apps Targets</string>
-    <string name="settings_section_heavy_targets_subtitle">Only these packages use full speed compilation</string>
+    <string name="settings_section_heavy_targets_subtitle">Only these packages use speed compilation</string>
     <string name="settings_section_rollback_title">Rollback</string>
     <string name="settings_section_rollback_subtitle">Reset optimized apps that misbehave after compilation</string>
     <string name="settings_section_shizuku_title">Shizuku Status</string>
@@ -236,7 +236,7 @@
     <string name="survival_error_title">Status check failed</string>
     <string name="survival_value_unknown">Unknown</string>
     <string name="survival_battery_title">Battery guard</string>
-    <string name="survival_battery_description">Optimization pauses below 35%% battery to reduce heat and shutdown risk.</string>
+    <string name="survival_battery_description">Optimization pauses below 35% battery to reduce heat and shutdown risk.</string>
     <string name="survival_thermal_title">Thermal guard</string>
     <string name="survival_thermal_description">Optimization pauses when dumpsys thermalservice reports severe or higher.</string>
     <string name="survival_standby_title">Standby bucket</string>
