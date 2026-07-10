@@ -353,7 +353,7 @@ class AdbRepositoryImpl @Inject constructor(
 
         val packagesToAnalyze = targetPackagesForMode(mode, allPackages)
         if (packagesToAnalyze.isEmpty()) {
-            logger.addLogEntry(LogEntryType.INFO, "No packages selected", detail = mode.displayName())
+            logger.addLogEntry(LogEntryType.INFO, "No packages selected", detail = mode.displayName)
             return@runCatching emptyAnalysisResult(mode)
         }
 
@@ -495,12 +495,8 @@ class AdbRepositoryImpl @Inject constructor(
         val modeSupport = support.supportFor(requestedMode)
         if (!modeSupport.isSupported) {
             throw IllegalStateException(
-                if (mode == AppOptimizationType.ADVANCED_FULL_COMPILE) {
-                    "Advanced Full Compile is not supported on this Android build. " +
-                        "Available filters: ${support.availableFiltersLabel()}."
-                } else {
-                    modeSupport.reason ?: "Compiler filter $requestedMode is not supported."
-                }
+                "${mode.displayName}: " +
+                    (modeSupport.reason ?: "Compiler filter $requestedMode is not supported.")
             )
         }
 
@@ -558,7 +554,7 @@ class AdbRepositoryImpl @Inject constructor(
         val targetPackages = targetPackagesForMode(mode, allPackages)
         if (targetPackages.isEmpty()) {
             throw OptimizationPausedException(
-                "No packages selected for ${mode.displayName()} mode"
+                "No packages selected for ${mode.displayName} mode"
             )
         }
 
@@ -885,11 +881,12 @@ class AdbRepositoryImpl @Inject constructor(
         return when (mode) {
             AppOptimizationType.SPEED_PROFILE ->
                 actual in setOf("speed-profile", "speed", "everything")
+            // All three speed-based modes compile with `speed`; ART may still
+            // report `everything` on historical builds that used that filter.
             AppOptimizationType.FULL_DEX2OAT_SPEED,
-            AppOptimizationType.HEAVY_APPS_SPEED ->
-                actual in setOf("speed", "everything")
+            AppOptimizationType.HEAVY_APPS_SPEED,
             AppOptimizationType.ADVANCED_FULL_COMPILE ->
-                actual == "everything"
+                actual in setOf("speed", "everything")
         }
     }
 
@@ -1114,11 +1111,4 @@ class AdbRepositoryImpl @Inject constructor(
         val filter: String?,
         val reason: String
     )
-}
-
-private fun AppOptimizationType.displayName(): String = when (this) {
-    AppOptimizationType.SPEED_PROFILE -> "Speed Profile"
-    AppOptimizationType.FULL_DEX2OAT_SPEED -> "Full DEXtoOAT Speed"
-    AppOptimizationType.ADVANCED_FULL_COMPILE -> "Advanced Full Compile"
-    AppOptimizationType.HEAVY_APPS_SPEED -> "Gaming/Heavy Apps"
 }

@@ -152,12 +152,11 @@
     <string name="settings_opt_speed_title">Speed Profile</string>
     <string name="settings_opt_speed_description">Balanced ART optimization using profile-guided speed-profile compilation.</string>
     <string name="settings_opt_full_dex2oat_title">Full DEXtoOAT Speed</string>
-    <string name="settings_opt_full_dex2oat_description">Aggressive ART optimization using speed mode with --full across all eligible apps.</string>
-    <string name="settings_opt_advanced_full_title">Advanced Full Compile</string>
-    <string name="settings_opt_advanced_full_description">Attempts Android\'s most complete package compile mode when the build advertises it.</string>
-    <string name="settings_opt_advanced_full_disabled_reason">Not supported on this Android build. Available filters: speed, speed-profile, verify.</string>
+    <string name="settings_opt_full_dex2oat_description">Aggressive ART optimization using speed mode across all eligible apps.</string>
+    <string name="settings_opt_advanced_full_title">Full Compile / DEXopt All</string>
+    <string name="settings_opt_advanced_full_description">Complete dexopt of all eligible apps using speed with --full, as recommended by this Android build.</string>
     <string name="settings_opt_heavy_title">Gaming / Heavy Apps</string>
-    <string name="settings_opt_heavy_description">Uses speed mode with --full only for selected games, camera, browsers, or other heavy apps.</string>
+    <string name="settings_opt_heavy_description">Uses speed mode only for selected games, camera, browsers, or other heavy apps.</string>
     <string name="settings_heavy_package_label">Package name</string>
     <string name="settings_heavy_package_hint">Examples: com.sec.android.app.camera, com.android.chrome</string>
     <string name="settings_heavy_empty">No heavy apps selected. Gaming / Heavy Apps mode will pause until you add at least one package.</string>
@@ -202,11 +201,11 @@
     <string name="dashboard_ready_speed_profile_title">Speed Profile</string>
     <string name="dashboard_ready_speed_profile_description">Optimize apps based on usage patterns</string>
     <string name="dashboard_ready_full_dex2oat_title">Full DEXtoOAT Speed</string>
-    <string name="dashboard_ready_full_dex2oat_description">Runs speed mode with --full across all eligible apps</string>
-    <string name="dashboard_ready_advanced_full_title">Advanced Full Compile</string>
-    <string name="dashboard_ready_advanced_full_description">Requires runtime support for the everything compiler filter</string>
+    <string name="dashboard_ready_full_dex2oat_description">Runs speed mode across all eligible apps</string>
+    <string name="dashboard_ready_advanced_full_title">Full Compile / DEXopt All</string>
+    <string name="dashboard_ready_advanced_full_description">Full dexopt of all eligible apps using speed with --full</string>
     <string name="dashboard_ready_heavy_apps_title">Gaming / Heavy Apps</string>
-    <string name="dashboard_ready_heavy_apps_description">Runs full speed compilation only for selected apps</string>
+    <string name="dashboard_ready_heavy_apps_description">Runs speed compilation only for selected heavy apps</string>
 
     <string name="about_app_title">Galaxy OptiDroid</string>
     <string name="about_version_fallback">1.0.0</string>

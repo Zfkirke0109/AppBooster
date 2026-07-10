@@ -37,6 +37,21 @@ class ShellCommandSpecTest {
     }
 
     @Test
+    fun `given normal speed compile spec when argv built then omits full scope`() {
+        val spec = ShellCommandSpec.PackageCompile(
+            packageName = "com.example.app",
+            mode = "speed",
+            force = true
+        )
+
+        assertEquals(
+            listOf("cmd", "package", "compile", "-m", "speed", "-f", "com.example.app"),
+            spec.argv
+        )
+        assertTrue(ShellCommandSpec.isAllowedArgv(spec.argv))
+    }
+
+    @Test
     fun `given full speed compile spec when argv built then includes full scope`() {
         val spec = ShellCommandSpec.PackageCompile(
             packageName = "com.example.app",

@@ -83,8 +83,6 @@ internal fun OptimizationTypeSelector(
             description = stringResource(R.string.settings_opt_advanced_full_description),
             icon = Icons.Outlined.Bolt,
             isSelected = selectedType == AppOptimizationType.ADVANCED_FULL_COMPILE,
-            enabled = false,
-            disabledReason = stringResource(R.string.settings_opt_advanced_full_disabled_reason),
             onClick = { onTypeSelected(AppOptimizationType.ADVANCED_FULL_COMPILE) }
         )
 
