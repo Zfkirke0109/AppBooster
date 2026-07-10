@@ -141,3 +141,23 @@ Fable resumed with Codex's Stop/Cancel work sitting uncommitted in the tree
   final session report and PR #4 checklist.
 - Remaining manual recheck: install fixed build, Stop a run, expect the
   Canceled card (not "Optimization failed").
+
+---
+
+# Final session addendum (2026-07-10, later)
+
+- Stop recheck passed live: "Optimization canceled — 14 of 667 apps
+  optimized before stopping".
+- New launcher icon (galaxy squircle artwork) + two cosmetic string fixes
+  (35%% double-percent, heavy-targets subtitle) committed as `0ad0f46`,
+  verified on device.
+- Full to-completion Full Compile marathon completed (~74 min, ~700
+  packages) on the final build: "Finished with issues — 381 verified,
+  0 failed/refused, 40 unverified" — honest error-styled card at full
+  scale. Survived a mid-run app-process death via two automatic
+  WorkManager worker restarts. Details in docs/s23-ultra-validation.md.
+- Cancel-during-scan: unit-tested (flag + exception paths); live exercise
+  impossible post-marathon (warm-cache scans finish in ~8 s). Shared cancel
+  plumbing live-verified on the optimize path.
+- UX follow-up flagged (not in PR #4): hero card swaps Stop→Play at the
+  same position when a scan completes; debounce suggested.

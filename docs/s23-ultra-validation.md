@@ -156,3 +156,57 @@ no Knox/SELinux changes).
 - After installing the fixed build: start a run, tap Stop, and confirm the
   result card shows **Canceled** (not "Optimization failed"), the foreground
   notification disappears, and no second compile starts.
+- **Done 2026-07-10 (early session):** Stop produced "Optimization canceled —
+  14 of 667 apps optimized before stopping"; no further compile commands; the
+  foreground service terminated.
+
+---
+
+# 2026-07-10 Full to-completion marathon (PR #4, final validation)
+
+Run on the final PR build (stop/cancel fix + new launcher icon + string
+fixes), Full Compile / DEXopt All across the whole device.
+
+## Timeline and resilience
+
+- 02:15 — run started from the UI (638 packages needing optimization after
+  earlier partial runs; fresh scan inside the run).
+- ~02:54 — the marathon force-compiled `com.sec.android.app.launcher`; in the
+  fallout the app's own process was killed ("Force removing ActivityRecord",
+  then a "set debug app" force-stop killed the first retry).
+- 02:54:48 and 02:55:05 — **WorkManager automatically restarted the worker**;
+  the surviving attempt re-scanned (warm caches, ~1 min) and continued with
+  the remaining 421 packages. Every retry makes forward progress, so the
+  marathon converges rather than looping.
+- 03:29 — run completed. Total wall time ≈ 74 minutes for ~700 packages.
+
+## Final result (honest reporting at full scale)
+
+- Result card: **"Finished with issues — 381 verified, 0 failed/refused,
+  40 unverified"** with totals 728 Optimized / 40 Unverified.
+- The 40 packages whose post-compile ART evidence was unclear are counted
+  separately and the card is error-styled — the app refuses to claim clean
+  success, exactly per the truth rules.
+- Thermal status stayed 0 (none) throughout (battery peaked ≈ 37.6 °C early,
+  21.1 °C at the 03:07 check; SoC 42.2 °C); battery never approached the
+  35% guard (55-74% band, charger attached part of the run).
+
+## Cancel-during-scan (item 22b) — status
+
+- Unit-tested both ways: the user-flag path and the
+  worker-`CancellationException` path (no failure log, scan not finalised
+  as successful, `isScanning` cleared).
+- Live on-device cancellation of a scan is no longer practical on this
+  hardware state: after the marathon, a full 768-package scan completes in
+  ~8 seconds (warm dexopt caches) — faster than the remote screenshot+tap
+  round-trip. Two automation attempts raced completion and instead hit the
+  Play button that replaces Stop at the same coordinates (see UX note).
+  The scan stop flow shares the repository-first cancel plumbing that WAS
+  live-verified on the optimize path ("Optimization canceled" card).
+
+## UX follow-up noted (out of scope for PR #4)
+
+- The hero card swaps the red Stop for the pink Play button at the same
+  position the instant a scan completes; a tap aimed at Stop can start an
+  optimization run. Suggested fix: debounce the control for ~1s after a
+  phase transition. Tracked as a follow-up task.
