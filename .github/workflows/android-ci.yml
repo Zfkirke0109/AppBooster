@@ -151,20 +151,27 @@ jobs:
 
       - name: Prepare signing keystore
         env:
-          GH_RELEASE_KEYSTORE_BASE64: ${{ secrets.GH_RELEASE_KEYSTORE_BASE64 }}
-          GH_RELEASE_KEY_ALIAS:       ${{ secrets.GH_RELEASE_KEY_ALIAS }}
-          GH_RELEASE_KEY_PASSWORD:    ${{ secrets.GH_RELEASE_KEY_PASSWORD }}
-          GH_RELEASE_STORE_PASSWORD:  ${{ secrets.GH_RELEASE_STORE_PASSWORD }}
+          GH_RELEASE_KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          GH_RELEASE_KEY_ALIAS:       ${{ secrets.KEY_ALIAS }}
+          GH_RELEASE_KEY_PASSWORD:    ${{ secrets.KEY_PASSWORD }}
+          GH_RELEASE_STORE_PASSWORD:  ${{ secrets.KEYSTORE_PASSWORD }}
+          EXPECTED_SIGNER_SHA256:     ${{ secrets.EXPECTED_SIGNER_SHA256 }}
         run: |
-          for secret in GH_RELEASE_KEYSTORE_BASE64 GH_RELEASE_KEY_ALIAS GH_RELEASE_KEY_PASSWORD GH_RELEASE_STORE_PASSWORD; do
+          set -euo pipefail
+          for secret in GH_RELEASE_KEYSTORE_BASE64 GH_RELEASE_KEY_ALIAS GH_RELEASE_KEY_PASSWORD GH_RELEASE_STORE_PASSWORD EXPECTED_SIGNER_SHA256; do
             if [ -z "${!secret}" ]; then
               echo "::error::Required secret $secret is not configured."
               exit 1
             fi
           done
 
-          keystore_path="$RUNNER_TEMP/optiDroid-release.p12"
+          keystore_path="$RUNNER_TEMP/rootlesszachdsp.jks"
           printf '%s' "$GH_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$keystore_path"
+          chmod 600 "$keystore_path"
+          keytool -list -keystore "$keystore_path" -storepass "$GH_RELEASE_STORE_PASSWORD" -alias "$GH_RELEASE_KEY_ALIAS" >/dev/null
+          actual_fingerprint="$(keytool -exportcert -keystore "$keystore_path" -storepass "$GH_RELEASE_STORE_PASSWORD" -alias "$GH_RELEASE_KEY_ALIAS" | sha256sum | awk '{print toupper($1)}')"
+          expected_fingerprint="$(printf '%s' "$EXPECTED_SIGNER_SHA256" | tr -d '[:space:]:' | tr '[:lower:]' '[:upper:]')"
+          test "$actual_fingerprint" = "$expected_fingerprint" || { echo "::error::Signing certificate fingerprint mismatch."; exit 1; }
 
           {
             echo "GH_RELEASE_KEYSTORE_PATH=$keystore_path"
@@ -177,6 +184,8 @@ jobs:
         run: ./gradlew --no-daemon :app:assembleRelease :app:bundleRelease
 
       - name: Verify release APK signature
+        env:
+          EXPECTED_SIGNER_SHA256: ${{ secrets.EXPECTED_SIGNER_SHA256 }}
         run: |
           set -euo pipefail
           apksigner="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
@@ -193,8 +202,16 @@ jobs:
           fi
 
           for apk in "${apks[@]}"; do
-            "$apksigner" verify --verbose --print-certs "$apk"
+            report="$RUNNER_TEMP/$(basename "$apk").apksigner.txt"
+            "$apksigner" verify --verbose --print-certs "$apk" | tee "$report"
+            actual="$(awk -F': ' '/Signer #[0-9]+ certificate SHA-256 digest:/ {print toupper($2); exit}' "$report" | tr -d '[:space:]:' )"
+            expected="$(printf '%s' "$EXPECTED_SIGNER_SHA256" | tr -d '[:space:]:' | tr '[:lower:]' '[:upper:]')"
+            test "$actual" = "$expected" || { echo "::error::Signed APK certificate mismatch."; exit 1; }
           done
+
+      - name: Remove signing material from runner
+        if: always()
+        run: rm -f "$RUNNER_TEMP/rootlesszachdsp.jks"
 
       - name: Upload signed artifacts
         uses: actions/upload-artifact@v4
