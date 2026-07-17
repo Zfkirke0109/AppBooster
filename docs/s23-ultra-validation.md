@@ -351,3 +351,24 @@ The remaining gate is `runInstrumentedTests` and a short post-fix device smoke
 test confirming bounded Shizuku replies no longer cause Binder transaction
 failures. The earlier pre-fix full-run counters remain valid historical
 evidence and are intentionally not rewritten as post-fix results.
+
+## Connected tests and reinstall
+
+`runInstrumentedTests` completed against the physical `SM-S918U1` over the
+stable wireless ADB serial
+`adb-R5CW6160LLN-Va93OQ._adb-tls-connect._tcp`: 3 tests finished with 0
+failures and Gradle reported `BUILD SUCCESSFUL in 4m 1s`. This exercises the
+Room 1-to-2 migration, MediaStore telemetry export, and existing application-ID
+instrumentation coverage on Android 16.
+
+Android Gradle Plugin removed the tested app when the connected suite ended.
+The final debug APK was then reinstalled successfully without launching it.
+Package Manager reports version `1.7.0` (`10700`), notification permission
+granted, and `moe.shizuku.manager.permission.API_V23` granted. PR #5 CI also
+passed the signing-secret scan and unit-test jobs; release jobs correctly
+skipped on the pull-request event.
+
+Only a short manual post-fix Binder smoke remains: run one selected non-system
+package in Gaming / Heavy Apps and confirm that package verification finishes
+without `FAILED BINDER TRANSACTION` or `DeadObjectException`. An all-device
+compile must not be repeated for this check.

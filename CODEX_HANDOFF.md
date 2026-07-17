@@ -169,11 +169,14 @@ Fable resumed with Codex's Stop/Cancel work sitting uncommitted in the tree
 ## Current state
 
 - Branch: `codex/runtime-telemetry`
-- Latest committed checkpoint: `8cbd585 chore: bump Galaxy OptiDroid to 1.7.0`
+- Version checkpoint: `8cbd585 chore: bump Galaxy OptiDroid to 1.7.0`
+- Telemetry/Binder checkpoint: `173d184 feat: add Knox-safe runtime optimization telemetry`
+- Remote: pushed to `fork/codex/runtime-telemetry`; draft PR
+  `https://github.com/Zfkirke0109/AppBooster/pull/5`.
 - Base: created from `fork/master`; initial upstream comparison was
   `origin/master...HEAD = 0 30`.
-- Runtime telemetry source, tests, Room schema 2, and documentation are still
-  uncommitted pending the final verification gate.
+- Runtime telemetry source, tests, Room schema 2, Binder reply bounds, and
+  validation documentation are committed and recoverable from the fork.
 - Preserve and never stage: `DEVICE_VALIDATION_BEFORE_CODEX.patch`,
   `FABLE_RESUME_AFTER_CODEX_USAGE_LIMIT.patch`, and `validation/`.
 
@@ -235,19 +238,32 @@ Post-fix local verification completed on 2026-07-17:
 - Diff/secret audit: clean; local keystore extensions and Gradle signing files
   remain ignored, and the tracked root `gradle.properties` is secret-free.
 
-The earlier `runInstrumentedTests` attempt was stopped at the owner's request
-before manual validation and must be rerun against the final post-fix build.
+Final connected-test validation completed on the physical S23 Ultra over the
+stable wireless ADB serial
+`adb-R5CW6160LLN-Va93OQ._adb-tls-connect._tcp`:
+
+- `.\gradlew.bat runInstrumentedTests --no-daemon --max-workers=1 --stacktrace`:
+  **3 tests, 0 failures; BUILD SUCCESSFUL in 4m 1s**.
+- The connected-test runner removed the app after testing. The final debug APK
+  was reinstalled successfully, reports `1.7.0` (`10700`), and has notification
+  and Shizuku permissions granted.
+- The app remains stopped/not launched so the owner can perform the requested
+  manual post-fix runtime check.
+- PR #5 CI passed both `Signing secret scan` and `Unit tests`; signed-release
+  and publication jobs correctly skipped for the pull-request event.
 
 ## Exact next command
 
 ```powershell
 cd "C:\Users\zachk\OneDrive\Documents\OptiDroid Galaxy"
-$env:ANDROID_SERIAL = (adb devices | Select-String '_adb-tls-connect._tcp').ToString().Split()[0]
-.\gradlew.bat runInstrumentedTests --no-daemon --max-workers=1 --stacktrace
+$serial = 'adb-R5CW6160LLN-Va93OQ._adb-tls-connect._tcp'
+adb -s $serial logcat -c
+adb -s $serial logcat -v time | Tee-Object -FilePath validation\post_binder_fix_logcat.txt
 ```
 
-The source/test/schema/docs checkpoint should be committed and pushed only to
-`fork` before this remaining device gate. After the instrumented run, reinstall
-the final debug APK if Android Gradle Plugin removes it and perform a short
-post-fix Binder smoke check. Keep the PR draft until those results are recorded.
-Do not tag or publish 1.7.0 until the PR is merged and `fork/master` CI is green.
+With that capture running, the owner should manually launch Galaxy OptiDroid
+and run Gaming / Heavy Apps for one selected, non-system package. Confirm the
+compile and verification complete without `FAILED BINDER TRANSACTION` or
+`DeadObjectException`; do not repeat an all-device compile. Keep the PR draft
+until that result is recorded. Do not tag or publish 1.7.0 until the PR is
+merged and `fork/master` CI is green.
