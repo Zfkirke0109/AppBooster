@@ -14,6 +14,10 @@ import com.tony.appbooster.domain.usecase.settings.ObserveHeavyAppPackagesUseCas
 import com.tony.appbooster.domain.usecase.settings.SetAppOptimizationTypeUseCase
 import com.tony.appbooster.domain.usecase.settings.SetHeavyAppPackagesUseCase
 import com.tony.appbooster.domain.usecase.shizuku.ObserveShizukuStateUseCase
+import com.tony.appbooster.domain.model.telemetry.OptimizationRunTelemetry
+import com.tony.appbooster.domain.model.telemetry.TelemetryExportResult
+import com.tony.appbooster.domain.usecase.telemetry.ObserveLatestOptimizationTelemetryUseCase
+import com.tony.appbooster.domain.usecase.telemetry.RetryLatestTelemetryExportUseCase
 import com.tony.appbooster.presentation.screen.settings.model.AppInfo
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -47,6 +51,7 @@ class SettingsViewModelTest {
     private val shizukuStateFlow = MutableStateFlow<ShizukuState>(ShizukuState.NotRunning)
     private val heavyPackagesFlow = MutableStateFlow<Resource<Set<String>>>(Resource.Success(emptySet()))
     private val rollbackCandidatesFlow = MutableStateFlow<List<OptimizationRollbackCandidate>>(emptyList())
+    private val telemetryFlow = MutableStateFlow<OptimizationRunTelemetry?>(null)
 
     private lateinit var navigationManager: NavigationManager
     private lateinit var observeAppOptimizationTypeUseCase: ObserveAppOptimizationTypeUseCase
@@ -57,6 +62,8 @@ class SettingsViewModelTest {
     private lateinit var observeShizukuStateUseCase: ObserveShizukuStateUseCase
     private lateinit var observeRollbackCandidatesUseCase: ObserveRollbackCandidatesUseCase
     private lateinit var rollbackOptimizationUseCase: RollbackOptimizationUseCase
+    private lateinit var observeLatestOptimizationTelemetryUseCase: ObserveLatestOptimizationTelemetryUseCase
+    private lateinit var retryLatestTelemetryExportUseCase: RetryLatestTelemetryExportUseCase
 
     @Before
     fun setUp() {
@@ -71,11 +78,14 @@ class SettingsViewModelTest {
         observeShizukuStateUseCase = mockk()
         observeRollbackCandidatesUseCase = mockk()
         rollbackOptimizationUseCase = mockk()
+        observeLatestOptimizationTelemetryUseCase = mockk()
+        retryLatestTelemetryExportUseCase = mockk()
 
         every { observeShizukuStateUseCase() } returns shizukuStateFlow
         every { observeAppOptimizationTypeUseCase() } returns flowOf(Resource.Success(AppOptimizationType.SPEED_PROFILE))
         every { observeHeavyAppPackagesUseCase() } returns heavyPackagesFlow
         every { observeRollbackCandidatesUseCase() } returns rollbackCandidatesFlow
+        every { observeLatestOptimizationTelemetryUseCase() } returns telemetryFlow
         coEvery { getAppInfoUseCase() } returns Resource.Success(AppInfo("1.0.0", "Alpha"))
     }
 
@@ -93,7 +103,9 @@ class SettingsViewModelTest {
         getAppInfoUseCase = getAppInfoUseCase,
         observeShizukuStateUseCase = observeShizukuStateUseCase,
         observeRollbackCandidatesUseCase = observeRollbackCandidatesUseCase,
-        rollbackOptimizationUseCase = rollbackOptimizationUseCase
+        rollbackOptimizationUseCase = rollbackOptimizationUseCase,
+        observeLatestOptimizationTelemetryUseCase = observeLatestOptimizationTelemetryUseCase,
+        retryLatestTelemetryExportUseCase = retryLatestTelemetryExportUseCase
     )
 
     // ── Optimization type observation ─────────────────────────────────────────
@@ -261,6 +273,20 @@ class SettingsViewModelTest {
 
         coVerify(exactly = 1) { rollbackOptimizationUseCase("com.example.game") }
         assertEquals(null, vm.uiState.value.data?.rollingBackPackageName)
+    }
+
+    @Test
+    fun `given telemetry retry succeeds when clicked then invokes export use case`() = runTest {
+        coEvery { retryLatestTelemetryExportUseCase() } returns
+            TelemetryExportResult.Success("content://telemetry/latest", 10L)
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        vm.onRetryTelemetryExportClicked()
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { retryLatestTelemetryExportUseCase() }
+        assertEquals(false, vm.uiState.value.data?.isExportingTelemetry)
     }
 
     // ── Event dispatch via onEvent ────────────────────────────────────────────

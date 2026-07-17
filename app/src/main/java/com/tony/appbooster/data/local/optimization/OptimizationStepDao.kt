@@ -16,7 +16,7 @@ interface OptimizationStepDao {
         WHERE mode = :mode AND forceOptimize = :forceOptimize
         GROUP BY runId
         HAVING SUM(CASE WHEN status IN ('PENDING', 'RUNNING') THEN 1 ELSE 0 END) > 0
-           AND SUM(CASE WHEN status IN ('FAILED', 'UNVERIFIED', 'CANCELED') THEN 1 ELSE 0 END) = 0
+           AND SUM(CASE WHEN status = 'CANCELED' THEN 1 ELSE 0 END) = 0
         ORDER BY MAX(createdAtMs) DESC
         LIMIT 1
         """
@@ -122,6 +122,46 @@ interface OptimizationStepDao {
         stdout: String,
         stderr: String,
         updatedAtMs: Long
+    )
+
+    @Query(
+        """
+        UPDATE optimization_steps
+        SET displayCommand = :displayCommand,
+            storageTotalBeforeBytes = :storageTotalBytes,
+            storageAvailableBeforeBytes = :storageAvailableBytes,
+            storageReserveBytes = :storageReserveBytes,
+            storageCapturedBeforeAtMs = :storageCapturedAtMs
+        WHERE id = :id
+        """
+    )
+    suspend fun recordTelemetryStarted(
+        id: Long,
+        displayCommand: String,
+        storageTotalBytes: Long,
+        storageAvailableBytes: Long,
+        storageReserveBytes: Long,
+        storageCapturedAtMs: Long
+    )
+
+    @Query(
+        """
+        UPDATE optimization_steps
+        SET durationMs = :durationMs,
+            storageTotalAfterBytes = :storageTotalBytes,
+            storageAvailableAfterBytes = :storageAvailableBytes,
+            storageCapturedAfterAtMs = :storageCapturedAtMs,
+            verificationSource = :verificationSource
+        WHERE id = :id
+        """
+    )
+    suspend fun recordTelemetryFinished(
+        id: Long,
+        durationMs: Long,
+        storageTotalBytes: Long,
+        storageAvailableBytes: Long,
+        storageCapturedAtMs: Long,
+        verificationSource: String
     )
 
     @Query(

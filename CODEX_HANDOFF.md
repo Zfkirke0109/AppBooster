@@ -161,3 +161,93 @@ Fable resumed with Codex's Stop/Cancel work sitting uncommitted in the tree
   plumbing live-verified on the optimize path.
 - UX follow-up flagged (not in PR #4): hero card swaps Stop→Play at the
   same position when a scan completes; debounce suggested.
+
+---
+
+# Runtime telemetry continuation (2026-07-16)
+
+## Current state
+
+- Branch: `codex/runtime-telemetry`
+- Latest committed checkpoint: `8cbd585 chore: bump Galaxy OptiDroid to 1.7.0`
+- Base: created from `fork/master`; initial upstream comparison was
+  `origin/master...HEAD = 0 30`.
+- Runtime telemetry source, tests, Room schema 2, and documentation are still
+  uncommitted pending the final verification gate.
+- Preserve and never stage: `DEVICE_VALIDATION_BEFORE_CODEX.patch`,
+  `FABLE_RESUME_AFTER_CODEX_USAGE_LIMIT.patch`, and `validation/`.
+
+## Device-backed telemetry result
+
+The owner completed a one-package Gaming / Heavy Apps compile on the S23 Ultra.
+Read-only extraction of the app-owned Room and WorkManager databases plus the
+automatic JSON export confirmed:
+
+- Run `1784268919835`, package `com.deniscerri.ytdl`
+- Command `cmd package compile -m speed -f com.deniscerri.ytdl`
+- Exit 0, duration 5947 ms, `speed-profile` -> `speed`
+- Room status `COMPLETED`; WorkManager status `SUCCEEDED`
+- 1 targeted, 1 processed, 1 verified optimized; no failures, unverified, or
+  canceled packages
+- `cmd package dump` evidence: `status=speed`, `reason=cmdline`
+- 5 GiB reserve and before/after device-volume storage snapshots recorded
+- JSON auto-export succeeded at
+  `Download/Galaxy OptiDroid/Telemetry/galaxy-optidroid-run-1784268919835-1784268933736.json`
+- Room and JSON counters and step metadata matched exactly
+
+This selected-app run intentionally used normal dexopt scope. The earlier PR #4
+validation remains the evidence for the runtime-advertised all-app `--full`
+command. No second compile should be started merely to repeat this telemetry
+proof.
+
+## Full manual run and follow-up fix
+
+The owner later completed Full DEXtoOAT Speed across the device under a full
+Logcat capture:
+
+- Run `1784272575160`, mode `FULL_DEX2OAT_SPEED`, normal dexopt scope
+- 768 targeted; 766 commands at exit 0; 681 verified; 2 already matching;
+  0 failed/refused; 85 unverified
+- Room/JSON terminal result `COMPLETED_WITH_ISSUES`; WorkManager `SUCCESS`
+- Final JSON: 753614 bytes, MediaStore `is_pending=0`, Room counters matched
+- No app crash or ANR
+
+Evidence-backed defect: `cmd package dump` replies of 3.7-4.6 MB overflowed
+Binder and caused `DeadObjectException` plus repeated Shizuku UserService
+rebinds. The fix now filters per-package evidence and caps UserService replies,
+while preserving the measured 366144-character global dexopt cache. Repository
+verification also skips the global resolver when direct package/verbose
+evidence already proves the result.
+
+Post-fix local verification completed on 2026-07-17:
+
+- `.\gradlew.bat runUnitTests --no-daemon --max-workers=1 --stacktrace`:
+  **BUILD SUCCESSFUL**.
+- `.\gradlew.bat :app:assembleDebug --no-daemon --max-workers=1 --stacktrace`:
+  **BUILD SUCCESSFUL**.
+- `.\gradlew.bat :app:assembleRelease --no-daemon --max-workers=1 --stacktrace`:
+  **BUILD SUCCESSFUL**.
+- Release APK identity: `com.zfkirke0109.galaxyoptidroid`, version `1.7.0`
+  (`10700`).
+- `apksigner verify --verbose --print-certs`: v2 signature verified with one
+  RSA-4096 signer, `CN=Zfkirke0109`; certificate SHA-256
+  `bb93cab28f64a1cd14c92f771a91d4e000498448723cff3c6571a48cc6715723`.
+- Diff/secret audit: clean; local keystore extensions and Gradle signing files
+  remain ignored, and the tracked root `gradle.properties` is secret-free.
+
+The earlier `runInstrumentedTests` attempt was stopped at the owner's request
+before manual validation and must be rerun against the final post-fix build.
+
+## Exact next command
+
+```powershell
+cd "C:\Users\zachk\OneDrive\Documents\OptiDroid Galaxy"
+$env:ANDROID_SERIAL = (adb devices | Select-String '_adb-tls-connect._tcp').ToString().Split()[0]
+.\gradlew.bat runInstrumentedTests --no-daemon --max-workers=1 --stacktrace
+```
+
+The source/test/schema/docs checkpoint should be committed and pushed only to
+`fork` before this remaining device gate. After the instrumented run, reinstall
+the final debug APK if Android Gradle Plugin removes it and perform a short
+post-fix Binder smoke check. Keep the PR draft until those results are recorded.
+Do not tag or publish 1.7.0 until the PR is merged and `fork/master` CI is green.

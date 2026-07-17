@@ -1,5 +1,6 @@
 package com.tony.appbooster.data.repository
 
+import android.os.SystemClock
 import com.tony.appbooster.data.local.optimization.OptimizationStepDao
 import com.tony.appbooster.data.local.optimization.OptimizationStepEntity
 import com.tony.appbooster.data.local.optimization.OptimizationStepStatus
@@ -26,10 +27,16 @@ import com.tony.appbooster.domain.model.common.requireSuccess
 import com.tony.appbooster.domain.model.device.blockingSummary
 import com.tony.appbooster.domain.model.settings.AppOptimizationType
 import com.tony.appbooster.domain.model.settings.OptimizationTargetScope
+import com.tony.appbooster.domain.model.telemetry.OptimizationRunStatus
+import com.tony.appbooster.domain.model.telemetry.StorageSnapshot
+import com.tony.appbooster.domain.model.telemetry.TelemetryExportResult
 import com.tony.appbooster.domain.repository.AdbConnectionState
 import com.tony.appbooster.domain.repository.AdbRepository
 import com.tony.appbooster.domain.repository.DeviceGuardRepository
+import com.tony.appbooster.domain.repository.OptimizationTelemetryRepository
 import com.tony.appbooster.domain.repository.SettingsRepository
+import com.tony.appbooster.domain.service.StorageCapacityProvider
+import com.tony.appbooster.domain.service.TelemetryExporter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -60,12 +67,20 @@ class AdbRepositoryImpl @Inject constructor(
     private val compilationResolver: CompilationInfoResolver,
     private val optimizationStepDao: OptimizationStepDao,
     private val deviceGuardRepository: DeviceGuardRepository,
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val telemetryRepository: OptimizationTelemetryRepository,
+    private val storageCapacityProvider: StorageCapacityProvider,
+    private val telemetryExporter: TelemetryExporter
 ) : AdbRepository {
 
     companion object {
         /** Max failed package names listed by name in the end-of-run failure summary log. */
         private const val FAILED_PACKAGES_LOG_PREVIEW_COUNT = 10
+        private const val VERIFICATION_SOURCE_COMMAND_FAILURE = "command-failure"
+        private const val VERIFICATION_SOURCE_PACKAGE_DUMP = "cmd-package-dump"
+        private const val VERIFICATION_SOURCE_VERBOSE_OUTPUT = "compile-verbose-output"
+        private const val VERIFICATION_SOURCE_RESOLVER = "package-manager-resolver"
+        private const val VERIFICATION_SOURCE_UNAVAILABLE = "unavailable"
     }
 
     private val _connectionState =
@@ -165,6 +180,13 @@ class AdbRepositoryImpl @Inject constructor(
 
         logger.addLog("⏹ Cancelling optimization...")
         logger.addLogEntry(LogEntryType.CANCELLED, messageKey = LogMessageKey.OPTIMIZATION_CANCELLED)
+        if (current.runId > 0L) {
+            optimizationStepDao.markRunCanceled(current.runId, System.currentTimeMillis())
+            finishTelemetryRun(
+                status = OptimizationRunStatus.CANCELED,
+                statusMessage = "Canceled by user"
+            )
+        }
     }.fold(
         onSuccess = { Resource.Success(Unit) },
         onFailure = { Resource.Error(ResourceError.LogicError(it.message)) }
@@ -213,14 +235,28 @@ class AdbRepositoryImpl @Inject constructor(
     ): Resource<Unit> {
         val compileMode = mode.requestedCompileMode
         val modeKey = mode.value
+        val requestedRunId = System.currentTimeMillis()
         return runCatching {
             resetForNewRun()
-            val requestedRunId = System.currentTimeMillis()
             _optimizationProgress.value = OptimizationProgress(
                 runId = requestedRunId,
                 isRunning = true,
                 result = OptimizationResult.None
             )
+
+            val resumablePlan = findResumableOptimizationPlan(modeKey, forceOptimize)
+            val activeRunId = resumablePlan?.runId ?: requestedRunId
+            _optimizationProgress.value = _optimizationProgress.value.copy(runId = activeRunId)
+
+            val startingStorage = storageCapacityProvider.snapshot()
+            telemetryRepository.startOrResumeRun(
+                runId = activeRunId,
+                mode = mode,
+                forceOptimize = forceOptimize,
+                storageBefore = startingStorage
+            )
+            ensureStorageAllowsOptimization(startingStorage)
+
             val forceLabel = if (forceOptimize) " (Force)" else ""
             logger.addLogEntry(LogEntryType.START, messageKey = LogMessageKey.STARTING_OPTIMIZATION,
                 detail = "Mode: ${mode.displayName} ($compileMode)$forceLabel")
@@ -229,15 +265,22 @@ class AdbRepositoryImpl @Inject constructor(
             val compileSupport = resolveCompileSupportIfNeeded(mode)
             validateCompileSupport(mode, compileSupport)
 
-            val plan = findResumableOptimizationPlan(modeKey, forceOptimize)
-                ?: createOptimizationPlan(mode, forceOptimize, modeKey)
+            val plan = resumablePlan
+                ?: createOptimizationPlan(mode, forceOptimize, modeKey, activeRunId)
                 ?: run {
                     if (_optimizationProgress.value.isRunning) {
                         _optimizationProgress.value = _optimizationProgress.value.copy(
                             isRunning = false,
-                            currentAppPackage = ""
+                            result = OptimizationResult.Completed,
+                            currentAppPackage = "",
+                            progress = 1f
                         )
                     }
+                    telemetryRepository.updateProgress(
+                        activeRunId,
+                        _optimizationProgress.value
+                    )
+                    finishTelemetryRun(OptimizationRunStatus.COMPLETED, "No compile steps were required")
                     return@runCatching
                 }
 
@@ -253,17 +296,32 @@ class AdbRepositoryImpl @Inject constructor(
                 result = OptimizationResult.None,
                 totalCount = plan.totalCount,
                 skippedCount = plan.skippedCount,
-                alreadyOptimizedCount = plan.skippedCount,
+                alreadyOptimizedCount = plan.alreadyOptimizedCount,
+                skippedNoProfileCount = plan.skippedNoProfileCount,
                 processedCount = plan.processedCount,
-                optimizedSucceededCount = plan.processedCount,
+                optimizedSucceededCount = plan.optimizedCount,
+                failedOrRefusedCount = plan.failedCount,
+                unverifiedCount = plan.unverifiedCount,
                 progress = if (plan.totalCount > 0) {
                     plan.processedCount.toFloat() / plan.totalCount.toFloat()
                 } else {
                     0f
                 }
             )
+            telemetryRepository.updatePlanCounts(
+                runId = plan.runId,
+                totalTargetedCount = plan.totalCount + plan.skippedCount,
+                alreadyOptimizedCount = plan.alreadyOptimizedCount,
+                skippedNoProfileCount = plan.skippedNoProfileCount
+            )
+            telemetryRepository.updateProgress(plan.runId, _optimizationProgress.value)
 
-            logOptimizationStart(plan.totalCount, plan.skippedCount, compileMode)
+            logOptimizationStart(
+                total = plan.totalCount,
+                alreadyOptimizedCount = plan.alreadyOptimizedCount,
+                skippedNoProfileCount = plan.skippedNoProfileCount,
+                compileMode = compileMode
+            )
 
             val summary = compilePackages(plan, mode, compileSupport)
 
@@ -273,9 +331,16 @@ class AdbRepositoryImpl @Inject constructor(
             finaliseCompletion(
                 totalInstalled = plan.totalCount + plan.skippedCount,
                 summary = summary,
-                skippedCount = plan.skippedCount,
+                alreadyOptimizedCount = plan.alreadyOptimizedCount,
+                skippedNoProfileCount = plan.skippedNoProfileCount,
                 mode = mode
             )
+            val terminalStatus = if (_optimizationProgress.value.result is OptimizationResult.CompletedWithIssues) {
+                OptimizationRunStatus.COMPLETED_WITH_ISSUES
+            } else {
+                OptimizationRunStatus.COMPLETED
+            }
+            finishTelemetryRun(terminalStatus, null)
         }.fold(
             onSuccess = { Resource.Success(Unit) },
             onFailure = { throwable ->
@@ -294,6 +359,10 @@ class AdbRepositoryImpl @Inject constructor(
                         result = OptimizationResult.Canceled,
                         currentAppPackage = "",
                         progress = _optimizationProgress.value.progress.coerceIn(0f, 1f)
+                    )
+                    finishTelemetryRun(
+                        status = OptimizationRunStatus.CANCELED,
+                        statusMessage = "Canceled before completion"
                     )
                     return@fold Resource.Success(Unit)
                 }
@@ -320,6 +389,14 @@ class AdbRepositoryImpl @Inject constructor(
                         _optimizationProgress.value.currentAppPackage
                     },
                     progress = _optimizationProgress.value.progress.coerceIn(0f, 1f)
+                )
+                finishTelemetryRun(
+                    status = if (paused != null) {
+                        OptimizationRunStatus.PAUSED
+                    } else {
+                        OptimizationRunStatus.FAILED
+                    },
+                    statusMessage = message
                 )
                 Resource.Error(
                     ResourceError.LogicError(
@@ -490,6 +567,79 @@ class AdbRepositoryImpl @Inject constructor(
         }
     }
 
+    private fun ensureStorageAllowsOptimization(snapshot: StorageSnapshot) {
+        if (!snapshot.isBelowReserve) return
+
+        val availableGiB = snapshot.availableBytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
+        val reserveGiB = snapshot.reserveBytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
+        throw OptimizationPausedException(
+            "Storage guard: %.2f GiB available; %.2f GiB must remain free."
+                .format(availableGiB, reserveGiB)
+        )
+    }
+
+    private suspend fun finishTelemetryRun(
+        status: OptimizationRunStatus,
+        statusMessage: String?
+    ) {
+        val progress = _optimizationProgress.value
+        if (progress.runId <= 0L) return
+
+        val existing = runCatching { telemetryRepository.getRun(progress.runId) }
+            .getOrNull() ?: return
+        if (existing.status.isTerminal && status.isTerminal) {
+            if (existing.exportUri == null) exportTelemetry(progress.runId)
+            return
+        }
+
+        val storageAfter = runCatching { storageCapacityProvider.snapshot() }
+            .getOrElse { existing.storageAfter ?: existing.storageBefore }
+        val persistenceFailure = runCatching {
+            telemetryRepository.finishRun(
+                runId = progress.runId,
+                status = status,
+                statusMessage = statusMessage,
+                progress = progress,
+                storageAfter = storageAfter
+            )
+        }.exceptionOrNull()
+
+        if (persistenceFailure != null) {
+            logger.addLog("Telemetry persistence failed: ${persistenceFailure.message}")
+            logger.addLogEntry(
+                LogEntryType.ERROR,
+                "Telemetry persistence failed",
+                detail = persistenceFailure.message
+            )
+            return
+        }
+
+        if (status.isTerminal) exportTelemetry(progress.runId)
+    }
+
+    private suspend fun exportTelemetry(runId: Long) {
+        val result = runCatching { telemetryExporter.export(runId) }
+            .getOrElse { TelemetryExportResult.Failure(it.message ?: "Telemetry export failed") }
+        when (result) {
+            is TelemetryExportResult.Success -> {
+                logger.addLog("Telemetry exported: ${result.uri}")
+                logger.addLogEntry(
+                    LogEntryType.INFO,
+                    "Telemetry exported",
+                    detail = result.uri
+                )
+            }
+            is TelemetryExportResult.Failure -> {
+                logger.addLog("Telemetry export failed: ${result.message}")
+                logger.addLogEntry(
+                    LogEntryType.ERROR,
+                    "Telemetry export failed",
+                    detail = result.message
+                )
+            }
+        }
+    }
+
     private suspend fun resolveCompileSupportIfNeeded(
         mode: AppOptimizationType
     ): CompileModeSupportSnapshot? {
@@ -563,14 +713,23 @@ class AdbRepositoryImpl @Inject constructor(
         if (steps.isEmpty()) return null
 
         val skippedCount = steps.firstOrNull()?.skippedCount ?: 0
-        val processedCount = steps.count { it.status == OptimizationStepStatus.SUCCEEDED }
+        val optimizedCount = steps.count { it.status == OptimizationStepStatus.SUCCEEDED }
+        val failedCount = steps.count { it.status == OptimizationStepStatus.FAILED }
+        val unverifiedCount = steps.count { it.status == OptimizationStepStatus.UNVERIFIED }
+        val processedCount = optimizedCount + failedCount + unverifiedCount
+        val existingTelemetry = telemetryRepository.getRun(runId)
 
         return OptimizationRunPlan(
             runId = runId,
             steps = steps,
             totalCount = steps.size,
             skippedCount = skippedCount,
+            alreadyOptimizedCount = existingTelemetry?.alreadyOptimizedCount ?: skippedCount,
+            skippedNoProfileCount = existingTelemetry?.skippedNoProfileCount ?: 0,
             processedCount = processedCount,
+            optimizedCount = optimizedCount,
+            failedCount = failedCount,
+            unverifiedCount = unverifiedCount,
             isResumed = true
         )
     }
@@ -578,7 +737,8 @@ class AdbRepositoryImpl @Inject constructor(
     private suspend fun createOptimizationPlan(
         mode: AppOptimizationType,
         forceOptimize: Boolean,
-        modeKey: String
+        modeKey: String,
+        runId: Long
     ): OptimizationRunPlan? {
         val allPackages = packageQuery.queryInstalledPackages()
         if (allPackages.isEmpty()) {
@@ -594,27 +754,29 @@ class AdbRepositoryImpl @Inject constructor(
             )
         }
 
-        val packagesToOptimize: List<String>
-        val skippedCount: Int
-
-        if (forceOptimize) {
-            packagesToOptimize = targetPackages
-            skippedCount = 0
+        val resolution = if (forceOptimize) {
             logger.addLog("Force mode enabled: ${targetPackages.size} targeted packages will be compiled.")
             logger.addLogEntry(LogEntryType.INFO, messageKey = LogMessageKey.FORCE_MODE,
                 detail = "${targetPackages.size} apps")
+            PackageResolution(packagesToOptimize = targetPackages)
         } else {
-            val (resolved, skipped) = resolvePackagesToOptimize(mode, targetPackages)
-            packagesToOptimize = resolved
-            skippedCount = skipped
+            resolvePackagesToOptimize(mode, targetPackages)
         }
+        val packagesToOptimize = resolution.packagesToOptimize
+        val skippedCount = resolution.alreadyOptimizedCount + resolution.skippedNoProfileCount
+
+        telemetryRepository.updatePlanCounts(
+            runId = runId,
+            totalTargetedCount = targetPackages.size,
+            alreadyOptimizedCount = resolution.alreadyOptimizedCount,
+            skippedNoProfileCount = resolution.skippedNoProfileCount
+        )
 
         if (packagesToOptimize.isEmpty()) {
-            handleAllAlreadyOptimized(skippedCount)
+            handleNoCompileNeeded(runId, resolution)
             return null
         }
 
-        val runId = System.currentTimeMillis()
         val total = packagesToOptimize.size
         val now = System.currentTimeMillis()
         val steps = packagesToOptimize.mapIndexed { index, packageName ->
@@ -637,7 +799,12 @@ class AdbRepositoryImpl @Inject constructor(
             steps = optimizationStepDao.getStepsForRun(runId),
             totalCount = total,
             skippedCount = skippedCount,
+            alreadyOptimizedCount = resolution.alreadyOptimizedCount,
+            skippedNoProfileCount = resolution.skippedNoProfileCount,
             processedCount = 0,
+            optimizedCount = 0,
+            failedCount = 0,
+            unverifiedCount = 0,
             isResumed = false
         )
     }
@@ -665,12 +832,12 @@ class AdbRepositoryImpl @Inject constructor(
      * Determines which packages need optimisation, reusing a cached analysis
      * when valid or performing a fresh one.
      *
-     * @return Pair of (packages needing optimisation, count of skipped apps).
+     * @return Packages that need compilation with separate skip reasons.
      */
     private suspend fun resolvePackagesToOptimize(
         mode: AppOptimizationType,
         allPackages: List<String>
-    ): Pair<List<String>, Int> {
+    ): PackageResolution {
         val existing = _optimizationAnalysis.value
         val analysisIsValid = existing.lastScanTimeMs != null &&
             existing.totalAppsScanned > 0 &&
@@ -683,7 +850,11 @@ class AdbRepositoryImpl @Inject constructor(
             val allowedPackages = allPackages.toSet()
             val packagesToOptimize = existing.packagesNeedingOptimization
                 .filter { packageName -> packageName in allowedPackages }
-            return packagesToOptimize to (allPackages.size - packagesToOptimize.size)
+            return PackageResolution(
+                packagesToOptimize = packagesToOptimize,
+                alreadyOptimizedCount = existing.appsAlreadyOptimized,
+                skippedNoProfileCount = existing.appsWithNoProfile
+            )
         }
 
         logger.addLog("Analyzing optimization status...")
@@ -691,34 +862,53 @@ class AdbRepositoryImpl @Inject constructor(
             detail = "${allPackages.size} apps")
 
         val data = performAnalysisScan(allPackages, mode)
-        return data.packagesNeedingOptimization to
-            (data.appsAlreadyOptimized + data.appsWithNoProfile)
+        return PackageResolution(
+            packagesToOptimize = data.packagesNeedingOptimization,
+            alreadyOptimizedCount = data.appsAlreadyOptimized,
+            skippedNoProfileCount = data.appsWithNoProfile
+        )
     }
 
-    /** Handles the case where every package is already optimised. */
-    private fun handleAllAlreadyOptimized(skippedCount: Int) {
-        logger.addLog("✓ All apps are already optimized ($skippedCount apps skipped).")
+    /** Handles the case where analysis finds no package that should be compiled. */
+    private fun handleNoCompileNeeded(runId: Long, resolution: PackageResolution) {
+        val skippedCount = resolution.alreadyOptimizedCount + resolution.skippedNoProfileCount
+        logger.addLog(
+            "No optimization needed: ${resolution.alreadyOptimizedCount} already match, " +
+                "${resolution.skippedNoProfileCount} have no runtime profile."
+        )
         logger.addLog("No optimization needed at this time.")
         logger.addLogEntry(LogEntryType.COMPLETE, messageKey = LogMessageKey.ALL_APPS_OPTIMIZED,
-            detail = "$skippedCount apps")
+            detail = "${resolution.alreadyOptimizedCount} matching, " +
+                "${resolution.skippedNoProfileCount} no profile")
 
         _optimizationProgress.value = OptimizationProgress(
-            runId = System.currentTimeMillis(),
+            runId = runId,
             isRunning = false,
             result = OptimizationResult.Completed,
             skippedCount = skippedCount,
-            alreadyOptimizedCount = skippedCount,
+            alreadyOptimizedCount = resolution.alreadyOptimizedCount,
+            skippedNoProfileCount = resolution.skippedNoProfileCount,
+            totalCount = skippedCount,
             progress = 1f
         )
     }
 
     /** Emits initial log messages for the compilation loop. */
-    private fun logOptimizationStart(total: Int, skippedCount: Int, compileMode: String) {
-        logger.addLog("Optimizing $total apps ($skippedCount already optimized, skipped).")
+    private fun logOptimizationStart(
+        total: Int,
+        alreadyOptimizedCount: Int,
+        skippedNoProfileCount: Int,
+        compileMode: String
+    ) {
+        logger.addLog(
+            "Optimizing $total apps ($alreadyOptimizedCount already matching, " +
+                "$skippedNoProfileCount no profile)."
+        )
         logger.addLog("(Excluding ${PackageListQueryService.SELF_PACKAGE_NAME} to prevent self-crash)")
         logger.addLog("Starting compilation (Mode: $compileMode)...")
         logger.addLogEntry(LogEntryType.INFO, messageKey = LogMessageKey.MODE_INFO,
-            detail = "$compileMode — $total / $skippedCount")
+            detail = "$compileMode — $total compile, $alreadyOptimizedCount matching, " +
+                "$skippedNoProfileCount no profile")
     }
 
     /**
@@ -741,13 +931,16 @@ class AdbRepositoryImpl @Inject constructor(
     ): CompileRunSummary {
         val compileMode = mode.requestedCompileMode
         val failedPackages = mutableListOf<String>()
-        var optimizedCount = plan.processedCount
-        var failedCount = 0
-        var unverifiedCount = 0
+        var optimizedCount = plan.optimizedCount
+        var failedCount = plan.failedCount
+        var unverifiedCount = plan.unverifiedCount
         var processedCount = plan.processedCount
 
         for (step in plan.steps) {
-            if (step.status == OptimizationStepStatus.SUCCEEDED) continue
+            if (step.status == OptimizationStepStatus.SUCCEEDED ||
+                step.status == OptimizationStepStatus.FAILED ||
+                step.status == OptimizationStepStatus.UNVERIFIED
+            ) continue
             if (checkCancelled(plan.runId, processedCount)) {
                 return CompileRunSummary(
                     processedCount = processedCount,
@@ -766,7 +959,6 @@ class AdbRepositoryImpl @Inject constructor(
             val beforeFilter = compilationResolver
                 .queryPackageCompilationInfo(packageName, compileMode)
                 .compilerFilter
-            optimizationStepDao.markRunning(step.id, beforeFilter, System.currentTimeMillis())
 
             val command = ShellCommandSpec.PackageCompile(
                 packageName = packageName,
@@ -775,10 +967,22 @@ class AdbRepositoryImpl @Inject constructor(
                 full = mode.useFullDexoptScope,
                 verbose = compileSupport?.supportsVerboseCompile == true
             )
+            val storageBefore = storageCapacityProvider.snapshot()
+            ensureStorageAllowsOptimization(storageBefore)
+            optimizationStepDao.markRunning(step.id, beforeFilter, System.currentTimeMillis())
+            telemetryRepository.recordStepStarted(
+                stepId = step.id,
+                displayCommand = command.displayCommand,
+                storageBefore = storageBefore
+            )
             logger.addLog("> ${command.displayCommand}")
 
+            val commandStartedAtMs = SystemClock.elapsedRealtime()
             val commandAttempt = shellDataSource.executeCommandDetailed(command)
                 .mapCatching { it.requireSuccess(command.displayCommand) }
+            val commandDurationMs = (SystemClock.elapsedRealtime() - commandStartedAtMs)
+                .coerceAtLeast(0L)
+            val storageAfter = storageCapacityProvider.snapshot()
             if (commandAttempt.isFailure) {
                 val throwable = commandAttempt.exceptionOrNull()
                     ?: IllegalStateException("Compile command failed")
@@ -788,6 +992,12 @@ class AdbRepositoryImpl @Inject constructor(
                 // handler records the Canceled outcome.
                 if (throwable is CancellationException) throw throwable
                 recordStepFailure(step.id, packageName, throwable)
+                telemetryRepository.recordStepFinished(
+                    stepId = step.id,
+                    durationMs = commandDurationMs,
+                    storageAfter = storageAfter,
+                    verificationSource = VERIFICATION_SOURCE_COMMAND_FAILURE
+                )
                 failedPackages += packageName
                 failedCount++
                 processedCount++
@@ -796,7 +1006,6 @@ class AdbRepositoryImpl @Inject constructor(
             }
             val commandResult = commandAttempt.getOrThrow()
 
-            compilationResolver.resetCaches()
             val verification = verifyPackageCompile(packageName, mode, commandResult)
             if (verification.verified) {
                 logger.addLog("Verified: optimized $packageName (${verification.filter ?: compileMode})")
@@ -828,6 +1037,12 @@ class AdbRepositoryImpl @Inject constructor(
                 )
                 unverifiedCount++
             }
+            telemetryRepository.recordStepFinished(
+                stepId = step.id,
+                durationMs = commandDurationMs,
+                storageAfter = storageAfter,
+                verificationSource = verification.source
+            )
             val trimmed = commandResult.stdout.trim()
             if (trimmed.isNotBlank() && !trimmed.equals("Success", ignoreCase = true)) {
                 logger.addLog(trimmed)
@@ -864,7 +1079,7 @@ class AdbRepositoryImpl @Inject constructor(
         )
     }
 
-    private fun updateCompileProgress(
+    private suspend fun updateCompileProgress(
         plan: OptimizationRunPlan,
         processedCount: Int,
         optimizedCount: Int,
@@ -878,6 +1093,7 @@ class AdbRepositoryImpl @Inject constructor(
             unverifiedCount = unverifiedCount,
             progress = processedCount.toFloat() / plan.totalCount.toFloat()
         )
+        telemetryRepository.updateProgress(plan.runId, _optimizationProgress.value)
     }
 
     private suspend fun verifyPackageCompile(
@@ -896,16 +1112,30 @@ class AdbRepositoryImpl @Inject constructor(
                 ?.let { result -> DexoptStatusParser.parseCompilerFilterFromOutput(result.stdout) }
         }.getOrNull()
 
-        val resolverFilter = compilationResolver
-            .queryPackageCompilationInfo(packageName, mode.requestedCompileMode)
-            .compilerFilter
+        val resolverFilter = if (dumpFilter == null && verboseFilter == null) {
+            // Package state changed after compilation. Refresh resolver caches only
+            // when direct package/verbose evidence could not verify the result.
+            compilationResolver.resetCaches()
+            compilationResolver
+                .queryPackageCompilationInfo(packageName, mode.requestedCompileMode)
+                .compilerFilter
+        } else {
+            null
+        }
 
         val actualFilter = dumpFilter ?: verboseFilter ?: resolverFilter
         val verified = actualFilter != null && isAcceptedCompileFilter(actualFilter, mode)
+        val source = when {
+            dumpFilter != null -> VERIFICATION_SOURCE_PACKAGE_DUMP
+            verboseFilter != null -> VERIFICATION_SOURCE_VERBOSE_OUTPUT
+            resolverFilter != null -> VERIFICATION_SOURCE_RESOLVER
+            else -> VERIFICATION_SOURCE_UNAVAILABLE
+        }
 
         return PackageCompileVerification(
             verified = verified,
             filter = actualFilter,
+            source = source,
             reason = when {
                 verified -> null
                 actualFilter == null -> "Post-run ART state was unclear."
@@ -951,9 +1181,8 @@ class AdbRepositoryImpl @Inject constructor(
 
     /** Returns true (and updates state) if cancellation was requested. */
     private suspend fun checkCancelled(runId: Long, completedCount: Int): Boolean {
-        if (!optimizationCancelRequested.get() &&
-            _optimizationProgress.value.result !is OptimizationResult.Canceled
-        ) return false
+        if (_optimizationProgress.value.result is OptimizationResult.Canceled) return true
+        if (!optimizationCancelRequested.get()) return false
 
         optimizationStepDao.markRunCanceled(runId, System.currentTimeMillis())
         logger.addLog("⏹ Optimization cancelled.")
@@ -963,6 +1192,10 @@ class AdbRepositoryImpl @Inject constructor(
             isRunning = false,
             result = OptimizationResult.Canceled,
             currentAppPackage = ""
+        )
+        finishTelemetryRun(
+            status = OptimizationRunStatus.CANCELED,
+            statusMessage = "Canceled before completion"
         )
         return true
     }
@@ -976,13 +1209,15 @@ class AdbRepositoryImpl @Inject constructor(
     private fun finaliseCompletion(
         totalInstalled: Int,
         summary: CompileRunSummary,
-        skippedCount: Int,
+        alreadyOptimizedCount: Int,
+        skippedNoProfileCount: Int,
         mode: AppOptimizationType
     ) {
         val hasIssues = summary.failedCount > 0 || summary.unverifiedCount > 0
         val completionDetail = buildString {
             append("${summary.optimizedCount} verified optimized")
-            if (skippedCount > 0) append(", $skippedCount already/skipped")
+            if (alreadyOptimizedCount > 0) append(", $alreadyOptimizedCount already matching")
+            if (skippedNoProfileCount > 0) append(", $skippedNoProfileCount no profile")
             if (summary.failedCount > 0) append(", ${summary.failedCount} failed/refused")
             if (summary.unverifiedCount > 0) append(", ${summary.unverifiedCount} unverified")
         }
@@ -996,12 +1231,11 @@ class AdbRepositoryImpl @Inject constructor(
         logger.addLogEntry(LogEntryType.COMPLETE, messageKey = LogMessageKey.OPTIMIZATION_COMPLETE,
             detail = completionDetail)
 
-        val prevAnalysis = _optimizationAnalysis.value
         _optimizationAnalysis.value = OptimizationAnalysis(
             totalAppsScanned = totalInstalled,
             appsNeedingOptimization = 0,
-            appsAlreadyOptimized = summary.optimizedCount + skippedCount,
-            appsWithNoProfile = prevAnalysis.appsWithNoProfile,
+            appsAlreadyOptimized = summary.optimizedCount + alreadyOptimizedCount,
+            appsWithNoProfile = skippedNoProfileCount,
             failedOrRefusedCount = summary.failedCount,
             unverifiedCount = summary.unverifiedCount,
             isScanning = false,
@@ -1136,8 +1370,19 @@ class AdbRepositoryImpl @Inject constructor(
         val steps: List<OptimizationStepEntity>,
         val totalCount: Int,
         val skippedCount: Int,
+        val alreadyOptimizedCount: Int,
+        val skippedNoProfileCount: Int,
         val processedCount: Int,
+        val optimizedCount: Int,
+        val failedCount: Int,
+        val unverifiedCount: Int,
         val isResumed: Boolean
+    )
+
+    private data class PackageResolution(
+        val packagesToOptimize: List<String>,
+        val alreadyOptimizedCount: Int = 0,
+        val skippedNoProfileCount: Int = 0
     )
 
     private data class CompileRunSummary(
@@ -1150,6 +1395,7 @@ class AdbRepositoryImpl @Inject constructor(
     private data class PackageCompileVerification(
         val verified: Boolean,
         val filter: String?,
+        val source: String,
         val reason: String
     )
 }

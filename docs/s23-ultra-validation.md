@@ -210,3 +210,144 @@ fixes), Full Compile / DEXopt All across the whole device.
   position the instant a scan completes; a tap aimed at Stop can start an
   optimization run. Suggested fix: debounce the control for ~1s after a
   phase transition. Tracked as a follow-up task.
+
+---
+
+# 2026-07-16 Runtime Telemetry Validation (1.7.0)
+
+Validated the uncommitted runtime-telemetry implementation on the locked,
+non-root Samsung Galaxy S23 Ultra over wireless ADB. No direct `dex2oat`,
+profile-directory access, CPU controls, system partition changes, or
+`everything` commands were used.
+
+## Device and app identity
+
+- ADB serial alias: `adb-R5CW6160LLN-Va93OQ._adb-tls-connect._tcp`
+- Device: Samsung `SM-S918U1`, Android 16, SDK 36
+- Galaxy OptiDroid: `1.7.0` / `10700`
+- Shizuku service was running; notification and Shizuku API permissions were
+  granted before the run.
+
+## One-package telemetry run
+
+- Run ID: `1784268919835`
+- Mode: `HEAVY_APPS_SPEED`
+- Target: `com.deniscerri.ytdl`
+- Recorded command: `cmd package compile -m speed -f com.deniscerri.ytdl`
+- Exit code/stdout: `0` / `Success`
+- Command duration: `5947 ms`
+- Verification: `package-manager-resolver`
+- Compiler filter: `speed-profile` before, `speed` after
+- Terminal result: `COMPLETED`; WorkManager `WorkSpec.state = 2` (succeeded)
+- Counters: 1 targeted, 1 processed, 1 verified optimized, 0 failed/refused,
+  0 unverified, 0 canceled
+
+This selected-app run used normal dexopt scope and therefore did not include
+`--full`. It does not replace the earlier all-app Full Compile / DEXopt All
+evidence above, which captured `cmd package compile -m speed -f --full -v
+<package>` on the same Android build.
+
+## Storage and export evidence
+
+- Run-level available storage: `211273121792` bytes before and
+  `211251150848` bytes after.
+- Step-level available storage: `211272798208` bytes before and
+  `211253121024` bytes after.
+- Reserve policy recorded: `5368709120` bytes (5 GiB).
+- Thread policy recorded: `package-manager-managed`.
+- Export URI: `content://media/external/downloads/275992`.
+- Export file:
+  `Download/Galaxy OptiDroid/Telemetry/galaxy-optidroid-run-1784268919835-1784268933736.json`
+- Room and JSON counters, command metadata, storage snapshots, compiler
+  filters, duration, and verification source matched exactly.
+- The JSON labels storage values as device-volume observations, not
+  per-package DEX/VDEX/ART sizes.
+
+## Live ART evidence
+
+After the run, `cmd package dump com.deniscerri.ytdl` reported:
+
+```text
+Dexopt state:
+  arm64: [status=speed] [reason=cmdline] [primary-abi]
+```
+
+No optimization foreground service remained active after completion. Stop and
+cancel were not repeated during this one-package telemetry run; the earlier
+2026-07-10 live cancellation result remains documented above, and the current
+branch's cancellation terminal-state coverage is part of the final unit-test
+gate.
+
+---
+
+# 2026-07-17 Full Manual Runtime Run and Binder Finding
+
+The owner manually launched the installed `1.7.0` (`10700`) debug build and ran
+Full DEXtoOAT Speed to completion while full-system Logcat capture was active.
+The run used only the Shizuku UserService and allowlisted package-manager
+commands.
+
+## Terminal run evidence
+
+- Run ID: `1784272575160`
+- Mode: `FULL_DEX2OAT_SPEED`
+- Requested filter: `speed`; normal dexopt scope (`fullDexoptScope=false`)
+- First command:
+  `cmd package compile -m speed -f com.samsung.android.engineapp.camerashift`
+- Last command: `cmd package compile -m speed -f com.samsung.android.gru`
+- 768 targeted; 766 compile steps; 681 verified optimized; 2 already matching;
+  0 failed/refused; 85 unverified; 0 canceled
+- All 766 issued compile commands returned exit code 0.
+- Room terminal state: `COMPLETED_WITH_ISSUES`.
+- WorkManager terminal log: `Worker result SUCCESS` for `OptimizationWorker`.
+- No `FATAL EXCEPTION`, app-process crash, or app ANR was present in the
+  capture.
+
+The result is intentionally not reported as clean success. The 85 packages
+whose post-run evidence could not be proven remain `UNVERIFIED`, even though
+their compile commands exited successfully.
+
+## Telemetry agreement
+
+- JSON export URI: `content://media/external/downloads/276108`
+- Export file:
+  `Download/Galaxy OptiDroid/Telemetry/galaxy-optidroid-run-1784272575160-1784282844599.json`
+- MediaStore row: 753614 bytes and `is_pending=0`.
+- JSON schema version: 1; 766 steps (681 `SUCCEEDED`, 85 `UNVERIFIED`).
+- JSON and Room run counters matched exactly.
+- Available device-volume storage was `207730642944` bytes before and
+  `181459001344` bytes after. This is a device-volume observation, not a claim
+  that the roughly 24.47 GiB delta is package-specific DEX/VDEX/ART usage.
+- Reserve: 5 GiB; thread policy: `package-manager-managed`.
+
+## Binder defect found
+
+Post-compile `cmd package dump <package>` output reached 3.7-4.6 MB. Returning
+that text through `IShellService.executeCommand()` exceeded Binder transaction
+capacity and produced repeated `FAILED BINDER TRANSACTION` /
+`DeadObjectException` failures. The worker recovered and continued, but those
+verification failures contributed to the unverified count and repeatedly
+rebound the UserService. The once-per-run `dumpsys package dexopt` output was
+measured separately at 366144 characters (about 732 KB as an AIDL UTF-16
+reply).
+
+The branch now filters per-package dump output inside the UserService to retain
+only ART/compiler, timestamp, and overlay evidence; caps stdout/stderr before
+crossing Binder; and calls the global resolver only when direct package or
+verbose evidence is unavailable. The S23's complete current global dexopt dump
+fits below the selected cap. Focused and full unit tests pass; a post-fix device
+smoke test remains part of the final instrumented/install gate.
+
+## Post-fix build and signing gate
+
+The final Binder-safe source passed `runUnitTests`, `:app:assembleDebug`, and
+`:app:assembleRelease` on 2026-07-17. The release APK reports application ID
+`com.zfkirke0109.galaxyoptidroid`, version name `1.7.0`, and version code
+`10700`. `apksigner verify --verbose --print-certs` verified APK Signature
+Scheme v2 with one RSA-4096 signer (`CN=Zfkirke0109`) and certificate SHA-256
+`bb93cab28f64a1cd14c92f771a91d4e000498448723cff3c6571a48cc6715723`.
+
+The remaining gate is `runInstrumentedTests` and a short post-fix device smoke
+test confirming bounded Shizuku replies no longer cause Binder transaction
+failures. The earlier pre-fix full-run counters remain valid historical
+evidence and are intentionally not rewritten as post-fix results.

@@ -28,6 +28,16 @@ data class OptimizationStepEntity(
     val exitCode: Int? = null,
     val stdout: String? = null,
     val stderr: String? = null,
+    val displayCommand: String? = null,
+    val durationMs: Long? = null,
+    val storageTotalBeforeBytes: Long? = null,
+    val storageAvailableBeforeBytes: Long? = null,
+    val storageReserveBytes: Long? = null,
+    val storageCapturedBeforeAtMs: Long? = null,
+    val storageTotalAfterBytes: Long? = null,
+    val storageAvailableAfterBytes: Long? = null,
+    val storageCapturedAfterAtMs: Long? = null,
+    val verificationSource: String? = null,
     val createdAtMs: Long = System.currentTimeMillis(),
     val updatedAtMs: Long = createdAtMs
 )

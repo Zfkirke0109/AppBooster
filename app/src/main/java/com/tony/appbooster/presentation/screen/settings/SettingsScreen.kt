@@ -43,6 +43,7 @@ import com.tony.appbooster.presentation.screen.settings.components.OptimizationT
 import com.tony.appbooster.presentation.screen.settings.components.RollbackCandidatesCard
 import com.tony.appbooster.presentation.screen.settings.components.SettingsSection
 import com.tony.appbooster.presentation.screen.settings.components.ShizukuStatusCard
+import com.tony.appbooster.presentation.screen.settings.components.TelemetryStatusCard
 import com.tony.appbooster.presentation.tools.isTabletLayout
 import com.tony.appbooster.presentation.viewmodel.base.UIState
 import com.tony.appbooster.presentation.viewmodel.base.UIStatus
@@ -86,6 +87,7 @@ fun SettingsScreen(
             onAddHeavyPackage = viewModel::onAddHeavyAppPackageClicked,
             onRemoveHeavyPackage = viewModel::onRemoveHeavyAppPackageClicked,
             onRollbackPackage = viewModel::onRollbackPackageClicked,
+            onRetryTelemetryExport = viewModel::onRetryTelemetryExportClicked,
             snackbarHostState = snackbarHostState
         )
     }
@@ -111,6 +113,7 @@ fun SettingsScreenContent(
     onAddHeavyPackage: () -> Unit,
     onRemoveHeavyPackage: (String) -> Unit,
     onRollbackPackage: (String) -> Unit,
+    onRetryTelemetryExport: () -> Unit,
     snackbarHostState: SnackbarHostState
 ) {
     val isTablet = isTabletLayout()
@@ -146,6 +149,7 @@ fun SettingsScreenContent(
                 onAddHeavyPackage = onAddHeavyPackage,
                 onRemoveHeavyPackage = onRemoveHeavyPackage,
                 onRollbackPackage = onRollbackPackage,
+                onRetryTelemetryExport = onRetryTelemetryExport,
                 modifier = Modifier.padding(padding)
             )
         } else {
@@ -156,6 +160,7 @@ fun SettingsScreenContent(
                 onAddHeavyPackage = onAddHeavyPackage,
                 onRemoveHeavyPackage = onRemoveHeavyPackage,
                 onRollbackPackage = onRollbackPackage,
+                onRetryTelemetryExport = onRetryTelemetryExport,
                 modifier = Modifier.padding(padding)
             )
         }
@@ -173,6 +178,7 @@ private fun SettingsPhoneLayout(
     onAddHeavyPackage: () -> Unit,
     onRemoveHeavyPackage: (String) -> Unit,
     onRollbackPackage: (String) -> Unit,
+    onRetryTelemetryExport: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -217,6 +223,17 @@ private fun SettingsPhoneLayout(
         }
 
         SettingsSection(
+            title = stringResource(R.string.settings_section_telemetry_title),
+            subtitle = stringResource(R.string.settings_section_telemetry_subtitle)
+        ) {
+            TelemetryStatusCard(
+                run = data.latestTelemetryRun,
+                isExporting = data.isExportingTelemetry,
+                onRetryExport = onRetryTelemetryExport
+            )
+        }
+
+        SettingsSection(
             title = stringResource(R.string.settings_section_shizuku_title),
             subtitle = stringResource(R.string.settings_section_shizuku_subtitle)
         ) {
@@ -252,6 +269,7 @@ private fun SettingsTabletLayout(
     onAddHeavyPackage: () -> Unit,
     onRemoveHeavyPackage: (String) -> Unit,
     onRollbackPackage: (String) -> Unit,
+    onRetryTelemetryExport: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -326,6 +344,17 @@ private fun SettingsTabletLayout(
             }
 
             SettingsSection(
+                title = stringResource(R.string.settings_section_telemetry_title),
+                subtitle = stringResource(R.string.settings_section_telemetry_subtitle)
+            ) {
+                TelemetryStatusCard(
+                    run = data.latestTelemetryRun,
+                    isExporting = data.isExportingTelemetry,
+                    onRetryExport = onRetryTelemetryExport
+                )
+            }
+
+            SettingsSection(
                 title = stringResource(R.string.settings_section_about_title),
                 subtitle = stringResource(R.string.settings_section_about_subtitle)
             ) {
@@ -363,6 +392,7 @@ fun SettingsScreenContentLightPreview() {
             onAddHeavyPackage = {},
             onRemoveHeavyPackage = {},
             onRollbackPackage = {},
+            onRetryTelemetryExport = {},
             snackbarHostState = remember { SnackbarHostState() }
         )
     }
@@ -396,6 +426,7 @@ fun SettingsScreenContentDarkPreview() {
             onAddHeavyPackage = {},
             onRemoveHeavyPackage = {},
             onRollbackPackage = {},
+            onRetryTelemetryExport = {},
             snackbarHostState = remember { SnackbarHostState() }
         )
     }

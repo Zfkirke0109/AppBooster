@@ -18,9 +18,11 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Foreground [CoroutineWorker] that runs the app optimization workflow.
@@ -80,7 +82,7 @@ class OptimizationWorker @AssistedInject constructor(
             }
 
             if (isStopped) {
-                repository.cancelOptimization()
+                withContext(NonCancellable) { repository.cancelOptimization() }
                 return@coroutineScope Result.success()
             }
 
@@ -90,7 +92,7 @@ class OptimizationWorker @AssistedInject constructor(
             }
         } catch (_: CancellationException) {
             // WorkManager cancellation (e.g., notification stop) lands here.
-            repository.cancelOptimization()
+            withContext(NonCancellable) { repository.cancelOptimization() }
             Result.success()
         } finally {
             notificationJob.cancel()

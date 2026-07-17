@@ -66,10 +66,7 @@ class AppOptimizationTypeTest {
             AppOptimizationType.FULL_DEX2OAT_SPEED,
             AppOptimizationType.fromStoredValue("speed")
         )
-        assertEquals(
-            AppOptimizationType.ADVANCED_FULL_COMPILE,
-            AppOptimizationType.fromStoredValue("everything")
-        )
+        assertNull(AppOptimizationType.fromStoredValue("everything"))
         assertEquals(
             AppOptimizationType.HEAVY_APPS_SPEED,
             AppOptimizationType.fromStoredValue("full_optimization")

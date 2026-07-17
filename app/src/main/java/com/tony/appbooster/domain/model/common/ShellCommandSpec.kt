@@ -133,7 +133,7 @@ sealed interface ShellCommandSpec {
     }
 
     companion object {
-        private val COMPILE_MODES = setOf("speed-profile", "speed", "everything")
+        private val COMPILE_MODES = setOf("speed-profile", "speed")
 
         fun isAllowedArgv(argv: List<String>): Boolean {
             return when {

@@ -14,6 +14,9 @@ import com.tony.appbooster.domain.usecase.settings.ObserveHeavyAppPackagesUseCas
 import com.tony.appbooster.domain.usecase.settings.SetAppOptimizationTypeUseCase
 import com.tony.appbooster.domain.usecase.settings.SetHeavyAppPackagesUseCase
 import com.tony.appbooster.domain.usecase.shizuku.ObserveShizukuStateUseCase
+import com.tony.appbooster.domain.model.telemetry.TelemetryExportResult
+import com.tony.appbooster.domain.usecase.telemetry.ObserveLatestOptimizationTelemetryUseCase
+import com.tony.appbooster.domain.usecase.telemetry.RetryLatestTelemetryExportUseCase
 import com.tony.appbooster.presentation.screen.settings.model.AppInfo
 import com.tony.appbooster.presentation.viewmodel.base.BaseViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -44,7 +47,9 @@ class SettingsViewModel @Inject constructor(
     private val getAppInfoUseCase: GetAppInfoUseCase,
     private val observeShizukuStateUseCase: ObserveShizukuStateUseCase,
     private val observeRollbackCandidatesUseCase: ObserveRollbackCandidatesUseCase,
-    private val rollbackOptimizationUseCase: RollbackOptimizationUseCase
+    private val rollbackOptimizationUseCase: RollbackOptimizationUseCase,
+    private val observeLatestOptimizationTelemetryUseCase: ObserveLatestOptimizationTelemetryUseCase,
+    private val retryLatestTelemetryExportUseCase: RetryLatestTelemetryExportUseCase
 ) : BaseViewModel<SettingsUiState, SettingsUiEvent, SettingsUiEffect>(navigationManager) {
 
     override val LOG_TAG: String = "SettingsViewModel"
@@ -53,6 +58,7 @@ class SettingsViewModel @Inject constructor(
         observeOptimizationType()
         observeHeavyAppPackages()
         observeRollbackCandidates()
+        observeLatestTelemetry()
         observeShizukuState()
         loadAppInfo()
     }
@@ -115,6 +121,14 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    private fun observeLatestTelemetry() {
+        viewModelScope.launch(exceptionHandler) {
+            observeLatestOptimizationTelemetryUseCase().collectLatest { run ->
+                updateUiData(currentUiData().copy(latestTelemetryRun = run))
+            }
+        }
+    }
+
     /**
      * Observes Shizuku state changes to keep the UI state in sync
      * with the current Shizuku service and permission status.
@@ -170,6 +184,7 @@ class SettingsViewModel @Inject constructor(
             is SettingsUiEvent.OnRemoveHeavyAppPackageClicked ->
                 persistHeavyAppPackages(currentUiData().heavyAppPackages - event.packageName)
             is SettingsUiEvent.OnRollbackPackageClicked -> rollbackPackage(event.packageName)
+            SettingsUiEvent.OnRetryTelemetryExportClicked -> retryTelemetryExport()
         }
     }
 
@@ -196,6 +211,10 @@ class SettingsViewModel @Inject constructor(
 
     fun onRollbackPackageClicked(packageName: String) {
         onEvent(SettingsUiEvent.OnRollbackPackageClicked(packageName))
+    }
+
+    fun onRetryTelemetryExportClicked() {
+        onEvent(SettingsUiEvent.OnRetryTelemetryExportClicked)
     }
 
     private fun persistOptimizationType(type: AppOptimizationType) {
@@ -263,6 +282,23 @@ class SettingsViewModel @Inject constructor(
                     handleError(result)
                 }
             }
+        }
+    }
+
+    private fun retryTelemetryExport() {
+        if (currentUiData().isExportingTelemetry) return
+        viewModelScope.launch(exceptionHandler) {
+            updateUiData(currentUiData().copy(isExportingTelemetry = true))
+            val result = retryLatestTelemetryExportUseCase()
+            updateUiData(currentUiData().copy(isExportingTelemetry = false))
+            emitEffect(
+                SettingsUiEffect.ShowSnackbar(
+                    when (result) {
+                        is TelemetryExportResult.Success -> "Telemetry exported to ${result.uri}"
+                        is TelemetryExportResult.Failure -> result.message
+                    }
+                )
+            )
         }
     }
 

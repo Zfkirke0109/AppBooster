@@ -24,5 +24,7 @@ sealed interface SettingsUiEvent {
     data class OnRemoveHeavyAppPackageClicked(val packageName: String) : SettingsUiEvent
 
     data class OnRollbackPackageClicked(val packageName: String) : SettingsUiEvent
+
+    data object OnRetryTelemetryExportClicked : SettingsUiEvent
 }
 

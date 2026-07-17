@@ -295,4 +295,18 @@
     <string name="log_optimal">Optimal</string>
     <string name="log_no_profile_never_used">No profile</string>
     <string name="log_mode_info">Mode</string>
+
+    <!-- Runtime telemetry -->
+    <string name="settings_section_telemetry_title">Runtime telemetry</string>
+    <string name="settings_section_telemetry_subtitle">App-owned evidence from package-manager optimization runs</string>
+    <string name="telemetry_no_runs">No optimization telemetry is available yet.</string>
+    <string name="telemetry_latest_run">Latest run #%1$d</string>
+    <string name="telemetry_status">Status: %1$s</string>
+    <string name="telemetry_counts">%1$d verified · %2$d matching · %3$d failed · %4$d unverified</string>
+    <string name="telemetry_storage">Free storage: %1$s → %2$s</string>
+    <string name="telemetry_exported">Exported automatically to %1$s</string>
+    <string name="telemetry_export_error">Export failed: %1$s</string>
+    <string name="telemetry_export_pending">The terminal run will export automatically.</string>
+    <string name="telemetry_retry_export">Export latest again</string>
+    <string name="telemetry_exporting">Exporting…</string>
 </resources>

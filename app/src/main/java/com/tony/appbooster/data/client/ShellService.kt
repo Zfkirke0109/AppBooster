@@ -3,7 +3,6 @@ package com.tony.appbooster.data.client
 import android.util.Log
 import com.tony.appbooster.IShellService
 import com.tony.appbooster.domain.model.common.ShellCommandSpec
-import java.io.BufferedReader
 import java.io.InputStreamReader
 
 /**
@@ -35,10 +34,13 @@ class ShellService : IShellService.Stub() {
             var output = ""
             var error = ""
             val outputReaderThread = Thread {
-                output = BufferedReader(InputStreamReader(process.inputStream)).use { it.readText() }
+                output = ShellServiceOutputPolicy.readStdout(
+                    commandArgs = args,
+                    reader = InputStreamReader(process.inputStream)
+                )
             }
             val errorReaderThread = Thread {
-                error = BufferedReader(InputStreamReader(process.errorStream)).use { it.readText() }
+                error = ShellServiceOutputPolicy.readStderr(InputStreamReader(process.errorStream))
             }
 
             outputReaderThread.start()
