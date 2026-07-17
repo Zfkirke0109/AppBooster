@@ -256,7 +256,7 @@ The repository includes a GitHub Actions workflow at `.github/workflows/android-
 | **Signed release build** | Push to `master`, `main`, or `v*` tags, after tests pass | Builds signed APK + AAB and verifies the APK signature with `apksigner` |
 | **Publish GitHub Release** | Push to `v*` tags only | Creates a GitHub Release from recent commit notes and attaches the APK & AAB |
 
-Release publishing is tag-driven. Push a tag such as `v1.6.0` after on-device validation to publish a GitHub Release.
+Release publishing is tag-driven. Push a tag such as `v1.7.0` after on-device validation to publish a GitHub Release.
 
 > **Changelog**: The release workflow generates notes from commits since the previous tag. If no prior tag exists, it uses recent commits for the initial release notes.
 
