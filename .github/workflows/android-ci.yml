@@ -204,7 +204,7 @@ jobs:
           for apk in "${apks[@]}"; do
             report="$RUNNER_TEMP/$(basename "$apk").apksigner.txt"
             "$apksigner" verify --verbose --print-certs "$apk" | tee "$report"
-            actual="$(awk -F': ' '/Signer #[0-9]+ certificate SHA-256 digest:/ {print toupper($2); exit}' "$report" | tr -d '[:space:]:' )"
+            actual="$(awk -F': ' '/certificate SHA-256 digest:/ {print toupper($2); exit}' "$report" | tr -d '[:space:]:' )"
             expected="$(printf '%s' "$EXPECTED_SIGNER_SHA256" | tr -d '[:space:]:' | tr '[:lower:]' '[:upper:]')"
             test "$actual" = "$expected" || { echo "::error::Signed APK certificate mismatch."; exit 1; }
           done
