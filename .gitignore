@@ -12,6 +12,7 @@
 .DS_Store
 /build
 /captures
+/validation/
 .externalNativeBuild
 .cxx
 local.properties

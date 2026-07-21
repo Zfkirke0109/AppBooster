@@ -3,8 +3,8 @@
 ## Current continuation state (2026-07-21)
 
 - Active isolated worktree: `C:\Users\zachk\OneDrive\Documents\OptiDroid Galaxy Clean`.
-- Local branch: `codex/runtime-telemetry-clean`, based on and tracking the
-  remote PR branch `fork/codex/runtime-telemetry` at `969e9bf`.
+- Local branch: `codex/runtime-telemetry-clean`, tracking the remote PR branch
+  `fork/codex/runtime-telemetry`.
 - Draft PR: `https://github.com/Zfkirke0109/AppBooster/pull/5`.
 - The original worktree remains preserved. Its local-only commit `e0ea97a`
   contains desired source changes mixed with preservation patches, raw
@@ -91,24 +91,50 @@ copied. This fork retains the stronger shared contract (`KEYSTORE_BASE64`,
   avoided because its caching component has separate proprietary terms.
 - Downloaded CI APK identity: `com.zfkirke0109.galaxyoptidroid`, `1.7.0`,
   `10700`, target/compile SDK 36. `apksigner` confirms v2 signing with the
-  configured shared certificate `1845...7219`.
+  previously configured shared certificate `1845...7219`.
+- The five active GitHub Actions signing secrets were updated from the local
+  `optiDroid-release.p12` without printing or tracking any value. Dispatch run
+  `29860734093` passed the secret scan, 258 unit tests, signed APK/AAB build,
+  expected-fingerprint verification, keystore cleanup, and artifact upload.
+  Its APK and AAB independently verify with the historical RSA-4096 signer
+  `bb93...5723`; package/version are `com.zfkirke0109.galaxyoptidroid`
+  `1.7.0` (`10700`). Signing continuity is restored.
+- Current local gate rerun: `runUnitTests`, `:app:lintDebug`,
+  `:app:assembleDebug`, and `:app:compileDebugAndroidTestKotlin` all passed in
+  8m 10s; 258 tests, 0 failures/errors/skips.
+- `tools/Invoke-S23Validation.ps1` now enforces source/APK identity, exact APK
+  hash, historical signer continuity, SM-S918U1 identity, active log capture,
+  and post-install signer verification. It never uninstalls or clears data.
+  PowerShell parsing and PSScriptAnalyzer 1.25.0 pass with no warnings/errors.
 - `tasks --all`: **BUILD SUCCESSFUL in 1m 10s**; the repository exposes
   `runUnitTests`, `runInstrumentedTests`, and `runAllTests`.
-- No APK was installed during this continuation. The known signing continuity
-  mismatch remains a hard stop for installation, merge, tag, and release:
-  historical signer `bb93...5723` differs from the shared CI signer
-  `1845...7219`.
+- No APK was installed during this continuation. Wireless ADB reconnected as
+  `adb-R5CW6160LLN-Va93OQ._adb-tls-connect._tcp` and preflight verified the
+  expected SM-S918U1/Android 16 build, but correctly blocked replacement: the
+  installed `1.7.0/10700` debug APK uses signer `87f6...eb1a`, while the release
+  uses historical signer `bb93...5723`.
+- Preflight evidence is under ignored local session
+  `validation/s23_20260721_123028`. No install/uninstall/data clear occurred.
+  The debug app was force-stopped for a consistent read-only `run-as` backup:
+  `app-data-before-release-install.tar` (24 entries, SQLite integrity `ok`),
+  plus six exported telemetry JSON files and a 35-file SHA-256 manifest.
+- Replacing the debug-signed app requires an uninstall, which clears installed
+  app data. That destructive step requires explicit owner approval even though
+  the app-owned database, WorkManager state, DataStore, and telemetry are backed
+  up. After approval, rerun `NewSession`, arm capture, and install through the
+  harness only.
 
 ### Exact next command
 
 ```powershell
 cd "C:\Users\zachk\OneDrive\Documents\OptiDroid Galaxy Clean"
-gh pr checks 5 --repo Zfkirke0109/AppBooster
+adb -s "adb-R5CW6160LLN-Va93OQ._adb-tls-connect._tcp" uninstall com.zfkirke0109.galaxyoptidroid
 ```
 
-Do not install, merge, tag, or publish until the owner selects a signing
-continuity policy. A safe next validation after that decision is the single
-selected-package Shizuku Binder smoke; do not repeat an all-device compile.
+Run that command only after explicit owner approval. Then `NewSession` must
+report `Install allowed without uninstall: True` before capture and installation.
+The required device run is the single selected-package Shizuku Binder smoke;
+do not repeat an all-device compile.
 
 Continuation record for the Codex 5.5 → Claude Fable 5 handoff on the
 S23 Ultra full-compile / scan-fix branch.

@@ -11,6 +11,37 @@ This checklist validates the signed Galaxy OptiDroid release on a Samsung Galaxy
 
 ## Install And Launch
 
+Use the validation harness so signer compatibility and log capture are proven
+before installation. Raw evidence is written under the ignored `validation/`
+directory.
+
+```powershell
+.\tools\Invoke-S23Validation.ps1 -Action VerifyArtifact
+.\tools\Invoke-S23Validation.ps1 -Action NewSession -Serial <ADB_SERIAL>
+.\tools\Invoke-S23Validation.ps1 -Action StartCapture
+.\tools\Invoke-S23Validation.ps1 -Action Install
+.\tools\Invoke-S23Validation.ps1 -Action Launch
+```
+
+`NewSession` refuses to continue if the connected model is not `SM-S918U1` or
+if an installed Galaxy OptiDroid package has an incompatible certificate.
+`Install` also rechecks both certificates and requires an active logcat capture.
+It never uninstalls the app or clears app data.
+
+After the manual scan, one-package optimization, rollback, cancellation, and UI
+checks, capture the final state and stop logcat:
+
+```powershell
+.\tools\Invoke-S23Validation.ps1 -Action Snapshot
+.\tools\Invoke-S23Validation.ps1 -Action StopCapture
+```
+
+The final capture summary counts crash, ANR, and Binder-failure signatures and
+stores package, WorkManager, memory, frame, battery, thermal, ART, UI hierarchy,
+and screenshot evidence for debugging.
+
+Direct installation commands are retained below only as a manual fallback:
+
 ```powershell
 adb devices
 adb install -r app\build\outputs\apk\release\app-release.apk
@@ -428,16 +459,38 @@ compile must not be repeated for this check.
   tests passed in 2m 34s, signed APK/AAB build and signature verification
   passed in 3m 17s, artifacts uploaded, release publication skipped, and no
   Node.js 20 deprecation annotation remained.
-- The downloaded CI APK is package `com.zfkirke0109.galaxyoptidroid`, version
+- The earlier downloaded CI APK is package `com.zfkirke0109.galaxyoptidroid`, version
   `1.7.0` (`10700`), compile/target SDK 36, and APK Signature Scheme v2 signed
   with shared certificate `1845...7219`.
-- Installation and connected tests were not repeated because the installed,
-  historical, debug, and shared release signers are not update-compatible.
+- The five active GitHub Actions signing secrets were then replaced from the
+  local historical keystore without exposing values. Manual-dispatch run
+  `29860734093` passed secret scanning, 258 unit tests, signed APK/AAB build,
+  fingerprint verification, cleanup, and artifact upload. The downloaded APK
+  and AAB both verify with historical RSA-4096 certificate `bb93...5723`.
+- The current local gate rerun passed `runUnitTests`, `:app:lintDebug`,
+  `:app:assembleDebug`, and `:app:compileDebugAndroidTestKotlin` in 8m 10s:
+  258 tests, 0 failures/errors/skips.
+- The pre-install harness passes PowerShell parsing and PSScriptAnalyzer 1.25.0
+  with no warnings or errors. It independently verifies the exact CI APK as
+  package `com.zfkirke0109.galaxyoptidroid`, version `1.7.0` (`10700`), signer
+  `bb93...5723`, and records its SHA-256 before allowing installation.
 
-## Release blocker
+## Signing continuity resolution and device gate
 
-The historical Galaxy OptiDroid release certificate SHA-256 ends in `5723`;
-the shared CI certificate SHA-256 ends in `7219`. A same-package/different-
-signer result is an update-continuity failure. Do not uninstall the current app,
-install over it, merge, tag, or publish 1.7.0 until the owner chooses an explicit
-signing continuity policy.
+Signing continuity is restored: local release, CI APK, and CI AAB now use the
+historical certificate ending in `5723`. No release APK has been installed yet.
+Wireless ADB later reconnected and
+`NewSession` verified the SM-S918U1/Android 16 build, then correctly refused
+installation because the installed `1.7.0/10700` debug APK uses signer
+`87f6...eb1a`, not historical release signer `bb93...5723`.
+
+No install, uninstall, or data clear occurred. Ignored local session
+`validation/s23_20260721_123028` contains the installed APK, preinstall device
+snapshot, a `run-as` archive of app-owned data (24 entries), six exported
+telemetry JSON files, and a 35-file SHA-256 manifest. The copied Room database
+passes `PRAGMA integrity_check` with `ok`.
+
+Replacing the debug-signed app requires uninstalling it, which clears its live
+app data. Proceed only after explicit owner approval. After uninstall, rerun
+`NewSession`; it must report `Install allowed without uninstall: True` before
+arming capture and installing the historical-signed CI artifact.
