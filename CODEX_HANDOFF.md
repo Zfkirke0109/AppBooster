@@ -59,14 +59,28 @@ copied. This fork retains the stronger shared contract (`KEYSTORE_BASE64`,
 
 ### Current validation
 
+- Source checkpoint `7f1c44b` is pushed to `fork/codex/runtime-telemetry`.
 - `runUnitTests` on 2026-07-21: **258 tests, 0 failures; BUILD SUCCESSFUL in
   3m 34s**. The total includes the four upstream Shizuku compatibility tests,
   telemetry retention/resume tests, notification-gate tests, and a BuildConfig
   app-info regression test.
 - `:app:lintDebug :app:assembleDebug :app:compileDebugAndroidTestKotlin` on
   2026-07-21: **BUILD SUCCESSFUL in 6m 1s**.
+- `:app:assembleRelease :app:bundleRelease` on the current source checkpoint:
+  **BUILD SUCCESSFUL in 16m 33s**. R8, resource shrinking, release lint-vital,
+  APK packaging, and AAB signing completed.
+- Release artifacts:
+  `app/build/outputs/apk/release/app-release.apk` and
+  `app/build/outputs/bundle/release/app-release.aab`.
 - Debug metadata: package `com.zfkirke0109.galaxyoptidroid`, version `1.7.0`,
   version code `10700`.
+- Release metadata reports the same package/version identity. `apksigner`
+  verifies the APK with v2 signing and `keytool` verifies the AAB; both use the
+  historical RSA-4096 certificate `bb93...5723` (`CN=Zfkirke0109`).
+- PR #5 checks on `7f1c44b`: signing-secret scan passed and unit tests passed.
+  Release/publish jobs correctly skipped for the pull-request event.
+- `tasks --all`: **BUILD SUCCESSFUL in 1m 10s**; the repository exposes
+  `runUnitTests`, `runInstrumentedTests`, and `runAllTests`.
 - No APK was installed during this continuation. The known signing continuity
   mismatch remains a hard stop for installation, merge, tag, and release:
   historical signer `bb93...5723` differs from the shared CI signer
@@ -76,8 +90,12 @@ copied. This fork retains the stronger shared contract (`KEYSTORE_BASE64`,
 
 ```powershell
 cd "C:\Users\zachk\OneDrive\Documents\OptiDroid Galaxy Clean"
-.\gradlew.bat :app:assembleRelease :app:bundleRelease --no-daemon --max-workers=1 --stacktrace
+gh pr checks 5 --repo Zfkirke0109/AppBooster
 ```
+
+Do not install, merge, tag, or publish until the owner selects a signing
+continuity policy. A safe next validation after that decision is the single
+selected-package Shizuku Binder smoke; do not repeat an all-device compile.
 
 Continuation record for the Codex 5.5 → Claude Fable 5 handoff on the
 S23 Ultra full-compile / scan-fix branch.

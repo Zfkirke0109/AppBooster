@@ -408,8 +408,18 @@ compile must not be repeated for this check.
 - `runUnitTests`: 258 tests, 0 failures, `BUILD SUCCESSFUL in 3m 34s`.
 - `:app:lintDebug :app:assembleDebug :app:compileDebugAndroidTestKotlin`:
   `BUILD SUCCESSFUL in 6m 1s`.
+- `:app:assembleRelease :app:bundleRelease`: `BUILD SUCCESSFUL in 16m 33s`.
+  R8, resource shrinking, lint-vital, APK packaging, and AAB signing completed.
+- `tasks --all`: `BUILD SUCCESSFUL in 1m 10s`; the root convenience tasks
+  `runUnitTests`, `runInstrumentedTests`, and `runAllTests` are present.
 - Debug `output-metadata.json`: package
   `com.zfkirke0109.galaxyoptidroid`, version name `1.7.0`, version code `10700`.
+- Release `output-metadata.json` reports the same package and version. The APK
+  verifies with APK Signature Scheme v2 and the AAB certificate verifies with
+  `keytool`; both use RSA-4096 signer SHA-256 `bb93...5723`.
+- PR #5 checks for source checkpoint `7f1c44b`: signing-secret scan passed and
+  unit tests passed. Release and publish jobs correctly skipped for the PR
+  event.
 - Installation and connected tests were not repeated because the installed,
   historical, debug, and shared release signers are not update-compatible.
 
