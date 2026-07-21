@@ -420,6 +420,17 @@ compile must not be repeated for this check.
 - PR #5 checks for source checkpoint `7f1c44b`: signing-secret scan passed and
   unit tests passed. Release and publish jobs correctly skipped for the PR
   event.
+- Workflow hardening checkpoint `4895aa2` pins every JavaScript action to an
+  immutable Node 24 commit SHA. `actionlint 1.7.12` passed. Gradle Setup remains
+  on permissive `v5.0.2` because v6 introduces separate proprietary caching
+  terms.
+- Manual-dispatch run `29859227588`: signing-secret scan passed in 5s, unit
+  tests passed in 2m 34s, signed APK/AAB build and signature verification
+  passed in 3m 17s, artifacts uploaded, release publication skipped, and no
+  Node.js 20 deprecation annotation remained.
+- The downloaded CI APK is package `com.zfkirke0109.galaxyoptidroid`, version
+  `1.7.0` (`10700`), compile/target SDK 36, and APK Signature Scheme v2 signed
+  with shared certificate `1845...7219`.
 - Installation and connected tests were not repeated because the installed,
   historical, debug, and shared release signers are not update-compatible.
 

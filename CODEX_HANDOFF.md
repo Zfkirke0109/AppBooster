@@ -59,7 +59,9 @@ copied. This fork retains the stronger shared contract (`KEYSTORE_BASE64`,
 
 ### Current validation
 
-- Source checkpoint `7f1c44b` is pushed to `fork/codex/runtime-telemetry`.
+- Source checkpoint `7f1c44b`, validation documentation checkpoint `52f7a96`,
+  and workflow-hardening checkpoint `4895aa2` are pushed to
+  `fork/codex/runtime-telemetry`.
 - `runUnitTests` on 2026-07-21: **258 tests, 0 failures; BUILD SUCCESSFUL in
   3m 34s**. The total includes the four upstream Shizuku compatibility tests,
   telemetry retention/resume tests, notification-gate tests, and a BuildConfig
@@ -79,6 +81,17 @@ copied. This fork retains the stronger shared contract (`KEYSTORE_BASE64`,
   historical RSA-4096 certificate `bb93...5723` (`CN=Zfkirke0109`).
 - PR #5 checks on `7f1c44b`: signing-secret scan passed and unit tests passed.
   Release/publish jobs correctly skipped for the pull-request event.
+- GitHub Actions run `29859227588` validates the hardened workflow at
+  `4895aa2`: signing-secret scan passed in 5s, unit tests passed in 2m 34s,
+  signed APK/AAB build and certificate verification passed in 3m 17s, signed
+  artifacts uploaded, and release publishing correctly skipped. No Node.js 20
+  deprecation annotation remained.
+- All JavaScript actions are pinned to immutable Node 24 commit SHAs with
+  release labels. Gradle Setup uses permissive `v5.0.2`; v6 was intentionally
+  avoided because its caching component has separate proprietary terms.
+- Downloaded CI APK identity: `com.zfkirke0109.galaxyoptidroid`, `1.7.0`,
+  `10700`, target/compile SDK 36. `apksigner` confirms v2 signing with the
+  configured shared certificate `1845...7219`.
 - `tasks --all`: **BUILD SUCCESSFUL in 1m 10s**; the repository exposes
   `runUnitTests`, `runInstrumentedTests`, and `runAllTests`.
 - No APK was installed during this continuation. The known signing continuity
