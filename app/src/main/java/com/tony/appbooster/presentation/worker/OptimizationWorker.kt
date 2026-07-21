@@ -108,7 +108,7 @@ class OptimizationWorker @AssistedInject constructor(
         const val KEY_FORCE_OPTIMIZE = "force_optimize"
         // Keep progress updates at ~1/s to stay below Android enqueue shedding thresholds.
         private const val NOTIFICATION_UPDATE_INTERVAL_MILLIS = 1000L
-        private const val NOTIFICATION_LOG_TAG = "OptimizationWorkerNotification"
+        private const val NOTIFICATION_LOG_TAG = "OptiDroidWorkerNotify"
 
         /**
          * Enqueues a unique optimization worker.

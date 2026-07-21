@@ -12,12 +12,15 @@ interface OptimizationStepDao {
 
     @Query(
         """
-        SELECT runId FROM optimization_steps
-        WHERE mode = :mode AND forceOptimize = :forceOptimize
-        GROUP BY runId
-        HAVING SUM(CASE WHEN status IN ('PENDING', 'RUNNING') THEN 1 ELSE 0 END) > 0
-           AND SUM(CASE WHEN status = 'CANCELED' THEN 1 ELSE 0 END) = 0
-        ORDER BY MAX(createdAtMs) DESC
+        SELECT steps.runId FROM optimization_steps AS steps
+        LEFT JOIN optimization_runs AS runs ON runs.runId = steps.runId
+        WHERE steps.mode = :mode
+          AND steps.forceOptimize = :forceOptimize
+          AND (runs.runId IS NULL OR runs.status IN ('RUNNING', 'PAUSED'))
+        GROUP BY steps.runId
+        HAVING SUM(CASE WHEN steps.status IN ('PENDING', 'RUNNING') THEN 1 ELSE 0 END) > 0
+           AND SUM(CASE WHEN steps.status = 'CANCELED' THEN 1 ELSE 0 END) = 0
+        ORDER BY MAX(steps.createdAtMs) DESC
         LIMIT 1
         """
     )

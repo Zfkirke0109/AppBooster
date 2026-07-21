@@ -264,12 +264,13 @@ Configure these repository secrets:
 
 | Secret | Purpose |
 |--------|---------|
-| `GH_RELEASE_KEYSTORE_BASE64` | Base64-encoded contents of the release keystore file |
-| `GH_RELEASE_KEY_ALIAS` | Alias of the release key inside the keystore |
-| `GH_RELEASE_KEY_PASSWORD` | Password for the selected key alias |
-| `GH_RELEASE_STORE_PASSWORD` | Password for the keystore itself |
+| `KEYSTORE_BASE64` | Base64-encoded contents of the release keystore file |
+| `KEY_ALIAS` | Alias of the release key inside the keystore |
+| `KEY_PASSWORD` | Password for the selected key alias |
+| `KEYSTORE_PASSWORD` | Password for the keystore itself |
+| `EXPECTED_SIGNER_SHA256` | Expected SHA-256 certificate fingerprint used to reject the wrong key |
 
-All four secrets are **required** for the release & publish jobs. Unit tests still run on every push and PR regardless of secrets.
+All five secrets are **required** for the release & publish jobs. Unit tests still run on every push and PR regardless of secrets.
 
 Signing secrets must stay out of source control. Keep local signing values in `~/.gradle/gradle.properties`, not the tracked root `gradle.properties`. See `docs/s23-ultra-validation.md` for the release APK validation checklist.
 

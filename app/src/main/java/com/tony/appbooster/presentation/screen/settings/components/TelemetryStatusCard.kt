@@ -82,12 +82,13 @@ internal fun TelemetryStatusCard(
                 )
             )
 
-            val exportText = when {
-                run.exportUri != null -> stringResource(R.string.telemetry_exported, run.exportUri)
-                run.exportError != null -> stringResource(R.string.telemetry_export_error, run.exportError)
-                else -> stringResource(R.string.telemetry_export_pending)
+            run.exportError?.let { error ->
+                Text(stringResource(R.string.telemetry_export_error, error))
             }
-            Text(exportText)
+            when {
+                run.exportUri != null -> Text(stringResource(R.string.telemetry_exported, run.exportUri))
+                run.exportError == null -> Text(stringResource(R.string.telemetry_export_pending))
+            }
 
             OutlinedButton(
                 onClick = onRetryExport,

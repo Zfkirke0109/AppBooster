@@ -86,7 +86,7 @@ class SettingsViewModelTest {
         every { observeHeavyAppPackagesUseCase() } returns heavyPackagesFlow
         every { observeRollbackCandidatesUseCase() } returns rollbackCandidatesFlow
         every { observeLatestOptimizationTelemetryUseCase() } returns telemetryFlow
-        coEvery { getAppInfoUseCase() } returns Resource.Success(AppInfo("1.0.0", "Alpha"))
+        coEvery { getAppInfoUseCase() } returns Resource.Success(AppInfo("1.0.0", "10000"))
     }
 
     @After
@@ -158,7 +158,7 @@ class SettingsViewModelTest {
 
     @Test
     fun `given getAppInfo returns success when created then version name is populated`() = runTest {
-        coEvery { getAppInfoUseCase() } returns Resource.Success(AppInfo("2.5.1", "Beta"))
+        coEvery { getAppInfoUseCase() } returns Resource.Success(AppInfo("2.5.1", "20501"))
         val vm = createViewModel()
         advanceUntilIdle()
 
@@ -166,12 +166,12 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `given getAppInfo returns success when created then version channel is populated`() = runTest {
-        coEvery { getAppInfoUseCase() } returns Resource.Success(AppInfo("1.0.0", "Stable"))
+    fun `given getAppInfo returns success when created then version code is populated`() = runTest {
+        coEvery { getAppInfoUseCase() } returns Resource.Success(AppInfo("1.0.0", "10000"))
         val vm = createViewModel()
         advanceUntilIdle()
 
-        assertEquals("Stable", vm.uiState.value.data?.appVersionChannel)
+        assertEquals("10000", vm.uiState.value.data?.appVersionCode)
     }
 
     // ── Shizuku state observation ─────────────────────────────────────────────

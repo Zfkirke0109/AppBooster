@@ -246,7 +246,7 @@ private fun SettingsPhoneLayout(
         ) {
             AboutCard(
                 versionName = data.appVersionName,
-                versionChannel = data.appVersionChannel
+                versionCode = data.appVersionCode
             )
         }
 
@@ -360,7 +360,7 @@ private fun SettingsTabletLayout(
             ) {
                 AboutCard(
                     versionName = data.appVersionName,
-                    versionChannel = data.appVersionChannel
+                    versionCode = data.appVersionCode
                 )
             }
             Spacer(Modifier.height(8.dp))
@@ -377,7 +377,7 @@ fun SettingsScreenContentLightPreview() {
     val uiState = SettingsUiState(
         appOptimizationType = AppOptimizationType.SPEED_PROFILE,
         appVersionName = "1.0.0",
-        appVersionChannel = "Alpha",
+        appVersionCode = "10000",
         shizukuState = ShizukuState.Ready
     )
     val baseState = UIState(
@@ -411,7 +411,7 @@ fun SettingsScreenContentDarkPreview() {
     val uiState = SettingsUiState(
         appOptimizationType = AppOptimizationType.HEAVY_APPS_SPEED,
         appVersionName = "1.0.0",
-        appVersionChannel = "Beta",
+        appVersionCode = "10000",
         shizukuState = ShizukuState.NotRunning
     )
     val baseState = UIState(

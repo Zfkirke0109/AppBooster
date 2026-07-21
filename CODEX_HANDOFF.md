@@ -1,5 +1,84 @@
 # CODEX_HANDOFF.md
 
+## Current continuation state (2026-07-21)
+
+- Active isolated worktree: `C:\Users\zachk\OneDrive\Documents\OptiDroid Galaxy Clean`.
+- Local branch: `codex/runtime-telemetry-clean`, based on and tracking the
+  remote PR branch `fork/codex/runtime-telemetry` at `969e9bf`.
+- Draft PR: `https://github.com/Zfkirke0109/AppBooster/pull/5`.
+- The original worktree remains preserved. Its local-only commit `e0ea97a`
+  contains desired source changes mixed with preservation patches, raw
+  validation files, databases, screenshots, APKs, and AABs. It was never
+  pushed and must not be pushed. The clean worktree contains only the intended
+  source, tests, resources, workflow documentation, and handoff changes.
+- Preserve and never stage `DEVICE_VALIDATION_BEFORE_CODEX.patch`,
+  `FABLE_RESUME_AFTER_CODEX_USAGE_LIMIT.patch`, or `validation/` from the
+  original worktree.
+
+### Latest upstream alignment
+
+Upstream was refreshed on 2026-07-21. `androidexpert35/AppBooster` now ships
+`v1.7.0-10700` at `c963005`; it supersedes the 1.6.1 release audited earlier.
+The complete 1.6.1-to-1.7.0 tag diff contains versioning, Settings build
+metadata, activity-feed layout/autoscroll, and upstream signing workflow
+changes. Shizuku package visibility and binder-first handling came from the
+separate 1.6.0-to-1.6.1 delta and remain incorporated here.
+
+Applicable app behavior is incorporated in this branch:
+
+- Android 11+ Shizuku package visibility, sticky binder delivery, and
+  binder-first state/permission checks.
+- `AppInfo` now exposes `versionName` and `versionCode` from the executing
+  `BuildConfig`; Settings shows the real `10700` code instead of calling it a
+  build channel.
+- The activity feed follows the latest entry after its 50-item retention limit,
+  fills the phone pane, uses the denser upstream 1.7.0 layout, and resolves app
+  labels/icons off the main thread.
+- The About card links to the Galaxy OptiDroid fork.
+- GitHub Release notes use `--notes-file` so multiline Markdown is preserved.
+
+The upstream `PS_RELEASE_*` signing-secret migration was intentionally not
+copied. This fork retains the stronger shared contract (`KEYSTORE_BASE64`,
+`KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`, and
+`EXPECTED_SIGNER_SHA256`), verifies the expected certificate, uses the fixed
+`awk ... $NF` parser, and removes the temporary keystore from the runner.
+
+### Verified runtime fixes in this continuation
+
+- Terminal optimization runs with pending step rows can no longer be resumed;
+  only `RUNNING`, `PAUSED`, or legacy rows without a run journal are eligible.
+- Resuming a paused run clears stale telemetry export metadata.
+- Telemetry retention pruning runs after success, cached success, and export
+  failure; Room remains the source of truth.
+- Settings shows a current export failure even when an older export URI exists.
+- Analysis foreground-notification updates are deduplicated and limited to one
+  per second, with terminal state forced immediately. This addresses the
+  captured Samsung NotificationManager shedding caused by hundreds of updates
+  per second.
+- Missing Italian resources and lint formatting issues are corrected.
+
+### Current validation
+
+- `runUnitTests` on 2026-07-21: **258 tests, 0 failures; BUILD SUCCESSFUL in
+  3m 34s**. The total includes the four upstream Shizuku compatibility tests,
+  telemetry retention/resume tests, notification-gate tests, and a BuildConfig
+  app-info regression test.
+- `:app:lintDebug :app:assembleDebug :app:compileDebugAndroidTestKotlin` on
+  2026-07-21: **BUILD SUCCESSFUL in 6m 1s**.
+- Debug metadata: package `com.zfkirke0109.galaxyoptidroid`, version `1.7.0`,
+  version code `10700`.
+- No APK was installed during this continuation. The known signing continuity
+  mismatch remains a hard stop for installation, merge, tag, and release:
+  historical signer `bb93...5723` differs from the shared CI signer
+  `1845...7219`.
+
+### Exact next command
+
+```powershell
+cd "C:\Users\zachk\OneDrive\Documents\OptiDroid Galaxy Clean"
+.\gradlew.bat :app:assembleRelease :app:bundleRelease --no-daemon --max-workers=1 --stacktrace
+```
+
 Continuation record for the Codex 5.5 → Claude Fable 5 handoff on the
 S23 Ultra full-compile / scan-fix branch.
 

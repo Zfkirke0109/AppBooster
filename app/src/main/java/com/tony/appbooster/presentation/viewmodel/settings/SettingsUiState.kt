@@ -11,7 +11,7 @@ import com.tony.appbooster.domain.model.telemetry.OptimizationRunTelemetry
  *
  * @param appOptimizationType Current optimization mode selected by the user.
  * @param appVersionName Human-readable version name displayed in the App info section.
- * @param appVersionChannel Optional label describing the build channel (e.g. Alpha).
+ * @param appVersionCode Gradle version code displayed in the About section.
  * @param shizukuState Current state of the Shizuku service and permissions.
  * @return Immutable UI state snapshot for settings presentation logic.
  */
@@ -24,6 +24,6 @@ data class SettingsUiState(
     val latestTelemetryRun: OptimizationRunTelemetry? = null,
     val isExportingTelemetry: Boolean = false,
     val appVersionName: String = "",
-    val appVersionChannel: String? = null,
+    val appVersionCode: String = "",
     val shizukuState: ShizukuState = ShizukuState.NotRunning
 )

@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.JsonWriter
+import androidx.annotation.RequiresApi
 import com.tony.appbooster.BuildConfig
 import com.tony.appbooster.di.AdbIoDispatcher
 import com.tony.appbooster.domain.model.telemetry.OptimizationRunTelemetry
@@ -41,7 +42,9 @@ class MediaStoreTelemetryExporter @Inject constructor(
             return@withContext TelemetryExportResult.Failure("Telemetry run $runId is not finished.")
         }
         if (!overwriteExisting && run.exportUri != null && run.exportedAtMs != null) {
-            return@withContext TelemetryExportResult.Success(run.exportUri, run.exportedAtMs)
+            val existingResult = TelemetryExportResult.Success(run.exportUri, run.exportedAtMs)
+            runCatching { repository.pruneToLatest(RETAINED_RUN_COUNT) }
+            return@withContext existingResult
         }
 
         val exportedAtMs = System.currentTimeMillis()
@@ -65,12 +68,11 @@ class MediaStoreTelemetryExporter @Inject constructor(
         }
 
         runCatching { repository.recordExportResult(runId, result) }
-        if (result is TelemetryExportResult.Success) {
-            runCatching { repository.pruneToLatest(RETAINED_RUN_COUNT) }
-        }
+        runCatching { repository.pruneToLatest(RETAINED_RUN_COUNT) }
         result
     }
 
+    @RequiresApi(Build.VERSION_CODES.Q)
     private fun exportToMediaStore(
         fileName: String,
         write: (OutputStream) -> Unit

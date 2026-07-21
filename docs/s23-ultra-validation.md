@@ -372,3 +372,51 @@ Only a short manual post-fix Binder smoke remains: run one selected non-system
 package in Gaming / Heavy Apps and confirm that package verification finishes
 without `FAILED BINDER TRANSACTION` or `DeadObjectException`. An all-device
 compile must not be repeated for this check.
+
+---
+
+# 2026-07-21 Upstream 1.7.0 And Runtime Hardening Gate
+
+## Upstream release comparison
+
+- Latest upstream release: `v1.7.0-10700` (`c963005`), published 2026-07-20.
+- The exact upstream tag diff from `v1.6.1-10601` changes 13 files: versioning,
+  app version display, activity-feed layout/autoscroll, and release-signing
+  workflow behavior. Shizuku app visibility and binder-first handling are from
+  the earlier `v1.6.0-10600` to `v1.6.1-10601` delta and are also incorporated.
+- Galaxy OptiDroid remains `1.7.0 / 10700` and now incorporates all applicable
+  app behavior from that release.
+- The fork intentionally does not adopt upstream's `PS_RELEASE_*` secrets.
+  Its existing five-secret shared-signing contract additionally checks the
+  expected SHA-256 certificate and is therefore stricter.
+
+## Source fixes validated
+
+- Shizuku uses a sticky binder listener and binder-first state detection.
+- Terminal Room runs are excluded from resumable-step lookup.
+- Resume clears stale export URI/error/timestamp values.
+- Retention pruning runs for terminal export success and failure paths.
+- Analysis notifications are deduplicated and rate-limited to one update per
+  second, with terminal updates delivered immediately.
+- The activity feed follows the newest retained entry instead of using an
+  out-of-range index after 50 entries; app label/icon lookup runs on
+  `Dispatchers.IO`.
+- Settings displays BuildConfig version name/code and links to the fork.
+
+## Local validation
+
+- `runUnitTests`: 258 tests, 0 failures, `BUILD SUCCESSFUL in 3m 34s`.
+- `:app:lintDebug :app:assembleDebug :app:compileDebugAndroidTestKotlin`:
+  `BUILD SUCCESSFUL in 6m 1s`.
+- Debug `output-metadata.json`: package
+  `com.zfkirke0109.galaxyoptidroid`, version name `1.7.0`, version code `10700`.
+- Installation and connected tests were not repeated because the installed,
+  historical, debug, and shared release signers are not update-compatible.
+
+## Release blocker
+
+The historical Galaxy OptiDroid release certificate SHA-256 ends in `5723`;
+the shared CI certificate SHA-256 ends in `7219`. A same-package/different-
+signer result is an update-continuity failure. Do not uninstall the current app,
+install over it, merge, tag, or publish 1.7.0 until the owner chooses an explicit
+signing continuity policy.

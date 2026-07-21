@@ -47,7 +47,9 @@ class OptimizationTelemetryRepositoryImpl @Inject constructor(
             status = OptimizationRunStatus.RUNNING.name,
             statusMessage = null,
             finishedAtMs = null,
-            exportError = null
+            exportUri = null,
+            exportError = null,
+            exportedAtMs = null
         ) ?: OptimizationRunEntity(
             runId = runId,
             modeKey = mode.value,

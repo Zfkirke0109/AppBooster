@@ -1,6 +1,7 @@
 package com.tony.appbooster.presentation.worker
 
 import android.content.Context
+import android.os.SystemClock
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkManager
@@ -46,35 +47,18 @@ class AnalysisWorker @AssistedInject constructor(
 
         WorkForegroundNotificationHelper.ensureChannel(applicationContext)
 
-        // Start foreground immediately.
-        setForeground(
-            WorkForegroundNotificationHelper.createForegroundInfo(
-                context = applicationContext,
-                workId = id.toString(),
-                currentLabel = null,
-                progressCurrent = 0,
-                progressTotal = 0
-            )
-        )
+        val notificationUpdater = AnalysisNotificationUpdater()
+        notificationUpdater.publishStart(id.toString())
 
         // Update notification whenever the current package/progress changes.
         val notificationJob: Job = launch {
             repository.optimizationAnalysis
                 .distinctUntilChangedBy { analysis ->
-                    "${analysis.currentPackage}|${analysis.totalAppsScanned}|${analysis.totalAppsToScan}"
+                    "${analysis.isScanning}|${analysis.currentPackage}|" +
+                        "${analysis.totalAppsScanned}|${analysis.totalAppsToScan}"
                 }
                 .collect { analysis ->
-                    val percent = (analysis.progress * 100f).toInt().coerceIn(0, 100)
-                    setForeground(
-                        WorkForegroundNotificationHelper.createForegroundInfo(
-                            context = applicationContext,
-                            workId = id.toString(),
-                            currentLabel = analysis.currentPackage.ifBlank { null },
-                            progressPercent = if (analysis.totalAppsToScan > 0) percent else null,
-                            progressCurrent = analysis.totalAppsScanned,
-                            progressTotal = analysis.totalAppsToScan
-                        )
-                    )
+                    notificationUpdater.publishProgress(id.toString(), analysis)
                 }
         }
 
@@ -106,8 +90,69 @@ class AnalysisWorker @AssistedInject constructor(
         return AppOptimizationType.fromStoredValue(value)
     }
 
+    private inner class AnalysisNotificationUpdater {
+        private val gate = ForegroundNotificationUpdateGate<AnalysisNotificationState>(
+            minimumIntervalMs = NOTIFICATION_UPDATE_INTERVAL_MILLIS
+        )
+        private var hasObservedActiveScan = false
+
+        suspend fun publishStart(workId: String) {
+            publish(workId, AnalysisNotificationState(), force = true)
+        }
+
+        suspend fun publishProgress(
+            workId: String,
+            analysis: com.tony.appbooster.domain.model.common.OptimizationAnalysis
+        ) {
+            if (analysis.isScanning) hasObservedActiveScan = true
+            val isTerminal = hasObservedActiveScan && !analysis.isScanning
+            val percent = (analysis.progress * 100f).toInt().coerceIn(0, 100)
+            publish(
+                workId = workId,
+                state = AnalysisNotificationState(
+                    currentLabel = analysis.currentPackage.ifBlank { null },
+                    progressPercent = if (analysis.totalAppsToScan > 0) percent else null,
+                    progressCurrent = analysis.totalAppsScanned,
+                    progressTotal = analysis.totalAppsToScan,
+                    showStopAction = !isTerminal
+                ),
+                force = isTerminal
+            )
+        }
+
+        private suspend fun publish(
+            workId: String,
+            state: AnalysisNotificationState,
+            force: Boolean
+        ) {
+            if (!gate.shouldPublish(state, SystemClock.elapsedRealtime(), force)) return
+
+            setForeground(
+                WorkForegroundNotificationHelper.createForegroundInfo(
+                    context = applicationContext,
+                    workId = workId,
+                    currentLabel = state.currentLabel,
+                    progressPercent = state.progressPercent,
+                    progressCurrent = state.progressCurrent,
+                    progressTotal = state.progressTotal,
+                    showStopAction = state.showStopAction
+                )
+            )
+        }
+    }
+
+    private data class AnalysisNotificationState(
+        val currentLabel: String? = null,
+        val progressPercent: Int? = null,
+        val progressCurrent: Int? = 0,
+        val progressTotal: Int? = 0,
+        val showStopAction: Boolean = true
+    )
+
     companion object {
         const val KEY_OPTIMIZATION_MODE = "optimization_mode"
+
+        private const val NOTIFICATION_UPDATE_INTERVAL_MILLIS = 1000L
 
         private const val UNIQUE_WORK_NAME = "analysis_work"
         const val TAG = "analysis"

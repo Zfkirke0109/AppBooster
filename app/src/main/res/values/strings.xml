@@ -209,9 +209,10 @@
 
     <string name="about_app_title">Galaxy OptiDroid</string>
     <string name="about_version_fallback">1.0.0</string>
+    <string name="about_version_code">Code %1$s</string>
     <string name="about_open_source_title">Open Source</string>
     <string name="about_open_source_description">View the source code on GitHub</string>
-    <string name="about_open_source_url">https://github.com/androidexpert35/AppBooster?tab=readme-ov-file</string>
+    <string name="about_open_source_url">https://github.com/Zfkirke0109/AppBooster</string>
     <string name="about_open_source_cd">Open source repository on GitHub</string>
 
     <!-- Preview-only strings (used in @Preview composables) -->
@@ -236,7 +237,7 @@
     <string name="survival_error_title">Status check failed</string>
     <string name="survival_value_unknown">Unknown</string>
     <string name="survival_battery_title">Battery guard</string>
-    <string name="survival_battery_description">Optimization pauses below 35% battery to reduce heat and shutdown risk.</string>
+    <string name="survival_battery_description" formatted="false">Optimization pauses below 35% battery to reduce heat and shutdown risk.</string>
     <string name="survival_thermal_title">Thermal guard</string>
     <string name="survival_thermal_description">Optimization pauses when dumpsys thermalservice reports severe or higher.</string>
     <string name="survival_standby_title">Standby bucket</string>

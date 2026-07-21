@@ -7,7 +7,9 @@ import com.tony.appbooster.data.local.optimization.OptimizationStepEntity
 import com.tony.appbooster.data.local.optimization.OptimizationStepStatus
 import com.tony.appbooster.domain.model.telemetry.OptimizationRunStatus
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.mockk
+import io.mockk.slot
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -96,5 +98,56 @@ class OptimizationTelemetryRepositoryImplTest {
         assertEquals("speed-profile", step.afterFilter)
         assertEquals("cmd-package-dump", step.verificationSource)
         assertEquals(79_500L, step.storageAfter?.availableBytes)
+    }
+
+    @Test
+    fun `resuming a run clears stale export metadata`() = runTest {
+        val runId = 84L
+        val existing = OptimizationRunEntity(
+            runId = runId,
+            modeKey = "SPEED_PROFILE",
+            requestedCompilerFilter = "speed-profile",
+            fullDexoptScope = false,
+            forceOptimize = false,
+            status = OptimizationRunStatus.PAUSED.name,
+            statusMessage = "storage reserve",
+            startedAtMs = 1_000L,
+            finishedAtMs = null,
+            storageTotalBeforeBytes = 100_000L,
+            storageAvailableBeforeBytes = 80_000L,
+            storageReserveBytes = 5_000L,
+            storageCapturedBeforeAtMs = 900L,
+            appVersionName = "1.7.0",
+            appVersionCode = 10_700L,
+            deviceManufacturer = "Samsung",
+            deviceModel = "SM-S918U1",
+            sdkInt = 36,
+            buildFingerprint = "test/fingerprint",
+            threadPolicy = "package-manager-managed",
+            exportUri = "content://telemetry/stale",
+            exportError = "stale error",
+            exportedAtMs = 2_000L
+        )
+        val saved = slot<OptimizationRunEntity>()
+        coEvery { runDao.getRun(runId) } returns existing
+        coEvery { runDao.upsert(capture(saved)) } returns Unit
+
+        repository.startOrResumeRun(
+            runId = runId,
+            mode = com.tony.appbooster.domain.model.settings.AppOptimizationType.SPEED_PROFILE,
+            forceOptimize = false,
+            storageBefore = com.tony.appbooster.domain.model.telemetry.StorageSnapshot(
+                totalBytes = 100_000L,
+                availableBytes = 79_000L,
+                reserveBytes = 5_000L,
+                capturedAtMs = 2_100L
+            )
+        )
+
+        coVerify(exactly = 1) { runDao.upsert(any()) }
+        assertEquals(OptimizationRunStatus.RUNNING.name, saved.captured.status)
+        assertEquals(null, saved.captured.exportUri)
+        assertEquals(null, saved.captured.exportError)
+        assertEquals(null, saved.captured.exportedAtMs)
     }
 }
