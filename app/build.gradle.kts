@@ -26,7 +26,7 @@ val hasReleaseSigning: Boolean = listOf(
 android {
     namespace = "com.tony.appbooster"
     compileSdk {
-        version = release(36)
+        version = release(37)
     }
 
     defaultConfig {
@@ -37,7 +37,7 @@ android {
         // ── Versioning (single source of truth) ──
         // Bump these three values for each release; versionCode is derived automatically.
         val major = 1
-        val minor = 6
+        val minor = 7
         val patch = 0
         versionCode = major * 10000 + minor * 100 + patch   // e.g. 1.2.3 → 10203
         versionName = "$major.$minor.$patch"
@@ -82,6 +82,8 @@ android {
         unitTests.isReturnDefaultValues = true
     }
 
+    sourceSets.getByName("androidTest").assets.directories.add("$projectDir/schemas")
+
     buildFeatures {
         compose = true
         aidl = true
@@ -105,12 +107,14 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.material3.windowsizeclass)
     implementation(libs.androidx.navigation.compose)
+    implementation(libs.kotlinx.coroutines.android)
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
     testImplementation(libs.turbine)
     testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation(libs.androidx.room.testing)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)

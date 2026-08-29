@@ -22,6 +22,9 @@ package com.tony.appbooster.domain.model.common
  * @property skippedNoProfileCount Number of speed-profile targets skipped because no runtime profile exists.
  * @property failedOrRefusedCount Number of target packages whose compile command failed or was refused.
  * @property unverifiedCount Number of target packages whose command returned success but post-run evidence was unclear.
+ * @property osAdjustedFilterCount Number of packages where ART applied a different filter.
+ * @property skippedNotApplicableCount Number of packages ART reported as not applicable.
+ * @property verificationUnavailableCount Number of packages lacking post-run ART evidence.
  * @property totalCount Total number of apps to optimize.
  */
 data class OptimizationProgress(
@@ -37,6 +40,9 @@ data class OptimizationProgress(
     val skippedNoProfileCount: Int = 0,
     val failedOrRefusedCount: Int = 0,
     val unverifiedCount: Int = 0,
+    val osAdjustedFilterCount: Int = 0,
+    val skippedNotApplicableCount: Int = 0,
+    val verificationUnavailableCount: Int = 0,
     val totalCount: Int = 0
 )
 

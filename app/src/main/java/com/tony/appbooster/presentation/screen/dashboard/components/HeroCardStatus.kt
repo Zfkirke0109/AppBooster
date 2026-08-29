@@ -44,7 +44,9 @@ sealed interface HeroCardStatus {
         override val processedCount: Int,
         override val skippedCount: Int,
         val failedCount: Int,
-        val unverifiedCount: Int,
+        val osAdjustedCount: Int,
+        val skippedNotApplicableCount: Int,
+        val verificationUnavailableCount: Int,
         override val totalCount: Int,
         val noProfileCount: Int = 0,
         override val optimizationMode: AppOptimizationType = AppOptimizationType.SPEED_PROFILE

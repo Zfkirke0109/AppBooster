@@ -88,7 +88,7 @@
     <string name="dashboard_result_paused_title">Optimization paused</string>
     <string name="dashboard_result_completed_count">%1$d of %2$d apps verified optimized</string>
     <string name="dashboard_result_completed_issues_title">Finished with issues</string>
-    <string name="dashboard_result_completed_issues_count">%1$d verified, %2$d failed/refused, %3$d unverified</string>
+    <string name="dashboard_result_completed_issues_count">%1$d requested filter, %2$d failed/refused, %3$d Android-adjusted, %4$d not applicable, %5$d verification unavailable</string>
     <string name="dashboard_result_canceled_count">%1$d of %2$d apps optimized before stopping</string>
     <string name="dashboard_result_failed_count">%1$d of %2$d apps optimized before the failure</string>
 
@@ -209,9 +209,10 @@
 
     <string name="about_app_title">Galaxy OptiDroid</string>
     <string name="about_version_fallback">1.0.0</string>
+    <string name="about_version_code">Code %1$s</string>
     <string name="about_open_source_title">Open Source</string>
     <string name="about_open_source_description">View the source code on GitHub</string>
-    <string name="about_open_source_url">https://github.com/androidexpert35/AppBooster?tab=readme-ov-file</string>
+    <string name="about_open_source_url">https://github.com/Zfkirke0109/AppBooster</string>
     <string name="about_open_source_cd">Open source repository on GitHub</string>
 
     <!-- Preview-only strings (used in @Preview composables) -->
@@ -236,7 +237,7 @@
     <string name="survival_error_title">Status check failed</string>
     <string name="survival_value_unknown">Unknown</string>
     <string name="survival_battery_title">Battery guard</string>
-    <string name="survival_battery_description">Optimization pauses below 35% battery to reduce heat and shutdown risk.</string>
+    <string name="survival_battery_description" formatted="false">Optimization pauses below 35% battery to reduce heat and shutdown risk.</string>
     <string name="survival_thermal_title">Thermal guard</string>
     <string name="survival_thermal_description">Optimization pauses when dumpsys thermalservice reports severe or higher.</string>
     <string name="survival_standby_title">Standby bucket</string>
@@ -264,6 +265,9 @@
     <string name="analysis_card_no_profile">No Profile</string>
     <string name="analysis_card_failed_refused">Failed / Refused</string>
     <string name="analysis_card_unverified">Unverified</string>
+    <string name="analysis_card_os_adjusted">Android applied a different compiler filter; no command failure</string>
+    <string name="analysis_card_not_applicable">Skipped because ART reported the package as not applicable</string>
+    <string name="analysis_card_verification_unavailable">Post-run ART verification unavailable</string>
     <string name="analysis_view_details">View Details</string>
 
     <!-- Activity feed UI -->
@@ -295,4 +299,18 @@
     <string name="log_optimal">Optimal</string>
     <string name="log_no_profile_never_used">No profile</string>
     <string name="log_mode_info">Mode</string>
+
+    <!-- Runtime telemetry -->
+    <string name="settings_section_telemetry_title">Runtime telemetry</string>
+    <string name="settings_section_telemetry_subtitle">App-owned evidence from package-manager optimization runs</string>
+    <string name="telemetry_no_runs">No optimization telemetry is available yet.</string>
+    <string name="telemetry_latest_run">Latest run #%1$d</string>
+    <string name="telemetry_status">Status: %1$s</string>
+    <string name="telemetry_counts">%1$d verified · %2$d matching · %3$d failed · %4$d unverified</string>
+    <string name="telemetry_storage">Free storage: %1$s → %2$s</string>
+    <string name="telemetry_exported">Exported automatically to %1$s</string>
+    <string name="telemetry_export_error">Export failed: %1$s</string>
+    <string name="telemetry_export_pending">The terminal run will export automatically.</string>
+    <string name="telemetry_retry_export">Export latest again</string>
+    <string name="telemetry_exporting">Exporting…</string>
 </resources>

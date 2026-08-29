@@ -227,7 +227,11 @@ fun DashboardHeroCard(
                                 processedCount = model.optimizationProgress.optimizedSucceededCount,
                                 skippedCount = model.optimizationProgress.skippedCount,
                                 failedCount = model.optimizationProgress.failedOrRefusedCount,
-                                unverifiedCount = model.optimizationProgress.unverifiedCount,
+                                osAdjustedCount = model.optimizationProgress.osAdjustedFilterCount,
+                                skippedNotApplicableCount =
+                                    model.optimizationProgress.skippedNotApplicableCount,
+                                verificationUnavailableCount =
+                                    model.optimizationProgress.verificationUnavailableCount,
                                 totalCount = model.optimizationProgress.totalCount,
                                 noProfileCount = model.optimizationAnalysis.appsWithNoProfile,
                                 optimizationMode = model.optimizationMode

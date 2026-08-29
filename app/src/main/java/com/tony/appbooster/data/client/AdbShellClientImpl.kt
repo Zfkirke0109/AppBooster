@@ -79,7 +79,21 @@ class AdbShellClientImpl @Inject constructor(
         val result = shizukuClient.execute(command)
 
         if (!result.isSuccess) {
-            Log.e(TAG, "Command failed with exit code ${result.exitCode}: ${result.error}")
+            val detailSource = if (result.error.isNotBlank()) "stderr" else "stdout"
+            val boundedDetail = result.error.ifBlank { result.output }
+                .replace(Regex("[\\r\\n\\t]+"), " ")
+                .trim()
+                .take(MAX_LOGGED_ERROR_CHARS)
+                .ifBlank { "<empty>" }
+            val message =
+                "operation=${command.logOperationName()} exitCode=${result.exitCode} " +
+                    "stderrChars=${result.error.length} stdoutChars=${result.output.length} " +
+                    "detailSource=$detailSource detail=$boundedDetail"
+            if (command == ShellCommandSpec.PackageCompileHelp) {
+                Log.d(TAG, "$message capabilityProbe=true fallback=PackageHelp")
+            } else {
+                Log.e(TAG, message)
+            }
         }
 
         return ShellCommandResult(
@@ -101,5 +115,23 @@ class AdbShellClientImpl @Inject constructor(
 
     companion object {
         private const val TAG = "AdbShellClientShizuku"
+        private const val MAX_LOGGED_ERROR_CHARS = 512
     }
+
+}
+
+/** Exhaustive stable names prevent R8-obfuscated class names from leaking into diagnostics. */
+internal fun ShellCommandSpec.logOperationName(): String = when (this) {
+    ShellCommandSpec.DumpsysPackage -> "DumpsysPackage"
+    ShellCommandSpec.ListPackages -> "ListPackages"
+    ShellCommandSpec.DumpsysPackageDexopt -> "DumpsysPackageDexopt"
+    ShellCommandSpec.DumpsysThermalService -> "DumpsysThermalService"
+    ShellCommandSpec.PackageHelp -> "PackageHelp"
+    ShellCommandSpec.PackageCompileHelp -> "PackageCompileHelp"
+    is ShellCommandSpec.DumpsysPackageForPackage -> "PackageDumpsys(package=$packageName)"
+    is ShellCommandSpec.PackageDump -> "PackageDump(package=$packageName)"
+    is ShellCommandSpec.PackageCompile -> "PackageCompile(package=$packageName)"
+    is ShellCommandSpec.PackageCompileCheck -> "PackageCompileCheck(package=$packageName)"
+    is ShellCommandSpec.PackageCompileReset -> "PackageCompileReset(package=$packageName)"
+    is ShellCommandSpec.GetStandbyBucket -> "GetStandbyBucket(package=$packageName)"
 }

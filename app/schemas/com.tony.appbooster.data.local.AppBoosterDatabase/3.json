@@ -1,0 +1,530 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 3,
+    "identityHash": "427f5a602f2c07ad8b9adfbc1f1cdd64",
+    "entities": [
+      {
+        "tableName": "optimization_steps",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `runId` INTEGER NOT NULL, `stepIndex` INTEGER NOT NULL, `totalSteps` INTEGER NOT NULL, `skippedCount` INTEGER NOT NULL, `packageName` TEXT NOT NULL, `mode` TEXT NOT NULL, `forceOptimize` INTEGER NOT NULL, `status` TEXT NOT NULL, `outcome` TEXT, `requestedFilter` TEXT, `beforeFilter` TEXT, `afterFilter` TEXT, `artStatus` TEXT, `artFinalStatus` TEXT, `artSizeBytes` INTEGER, `artSizeBeforeBytes` INTEGER, `android_build` TEXT, `art_module_version` TEXT, `packageLastUpdateTimeMs` INTEGER, `stableOsAdjusted` INTEGER NOT NULL DEFAULT 0, `exitCode` INTEGER, `stdout` TEXT, `stderr` TEXT, `displayCommand` TEXT, `durationMs` INTEGER, `storageTotalBeforeBytes` INTEGER, `storageAvailableBeforeBytes` INTEGER, `storageReserveBytes` INTEGER, `storageCapturedBeforeAtMs` INTEGER, `storageTotalAfterBytes` INTEGER, `storageAvailableAfterBytes` INTEGER, `storageCapturedAfterAtMs` INTEGER, `verificationSource` TEXT, `createdAtMs` INTEGER NOT NULL, `updatedAtMs` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "runId",
+            "columnName": "runId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stepIndex",
+            "columnName": "stepIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalSteps",
+            "columnName": "totalSteps",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "skippedCount",
+            "columnName": "skippedCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "packageName",
+            "columnName": "packageName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mode",
+            "columnName": "mode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "forceOptimize",
+            "columnName": "forceOptimize",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "outcome",
+            "columnName": "outcome",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "requestedFilter",
+            "columnName": "requestedFilter",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "beforeFilter",
+            "columnName": "beforeFilter",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "afterFilter",
+            "columnName": "afterFilter",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "artStatus",
+            "columnName": "artStatus",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "artFinalStatus",
+            "columnName": "artFinalStatus",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "artSizeBytes",
+            "columnName": "artSizeBytes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "artSizeBeforeBytes",
+            "columnName": "artSizeBeforeBytes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "androidBuild",
+            "columnName": "android_build",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "artModuleVersion",
+            "columnName": "art_module_version",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "packageLastUpdateTimeMs",
+            "columnName": "packageLastUpdateTimeMs",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "stableOsAdjusted",
+            "columnName": "stableOsAdjusted",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "exitCode",
+            "columnName": "exitCode",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "stdout",
+            "columnName": "stdout",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "stderr",
+            "columnName": "stderr",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "displayCommand",
+            "columnName": "displayCommand",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "durationMs",
+            "columnName": "durationMs",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "storageTotalBeforeBytes",
+            "columnName": "storageTotalBeforeBytes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "storageAvailableBeforeBytes",
+            "columnName": "storageAvailableBeforeBytes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "storageReserveBytes",
+            "columnName": "storageReserveBytes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "storageCapturedBeforeAtMs",
+            "columnName": "storageCapturedBeforeAtMs",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "storageTotalAfterBytes",
+            "columnName": "storageTotalAfterBytes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "storageAvailableAfterBytes",
+            "columnName": "storageAvailableAfterBytes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "storageCapturedAfterAtMs",
+            "columnName": "storageCapturedAfterAtMs",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "verificationSource",
+            "columnName": "verificationSource",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAtMs",
+            "columnName": "createdAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtMs",
+            "columnName": "updatedAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_optimization_steps_runId",
+            "unique": false,
+            "columnNames": [
+              "runId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_optimization_steps_runId` ON `${TABLE_NAME}` (`runId`)"
+          },
+          {
+            "name": "index_optimization_steps_runId_stepIndex",
+            "unique": true,
+            "columnNames": [
+              "runId",
+              "stepIndex"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_optimization_steps_runId_stepIndex` ON `${TABLE_NAME}` (`runId`, `stepIndex`)"
+          },
+          {
+            "name": "index_optimization_steps_runId_packageName",
+            "unique": true,
+            "columnNames": [
+              "runId",
+              "packageName"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_optimization_steps_runId_packageName` ON `${TABLE_NAME}` (`runId`, `packageName`)"
+          },
+          {
+            "name": "index_optimization_steps_packageName_outcome_requestedFilter",
+            "unique": false,
+            "columnNames": [
+              "packageName",
+              "outcome",
+              "requestedFilter"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_optimization_steps_packageName_outcome_requestedFilter` ON `${TABLE_NAME}` (`packageName`, `outcome`, `requestedFilter`)"
+          }
+        ]
+      },
+      {
+        "tableName": "optimization_runs",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`runId` INTEGER NOT NULL, `modeKey` TEXT NOT NULL, `requestedCompilerFilter` TEXT NOT NULL, `fullDexoptScope` INTEGER NOT NULL, `forceOptimize` INTEGER NOT NULL, `status` TEXT NOT NULL, `statusMessage` TEXT, `startedAtMs` INTEGER NOT NULL, `finishedAtMs` INTEGER, `totalTargetedCount` INTEGER NOT NULL, `processedCount` INTEGER NOT NULL, `optimizedSucceededCount` INTEGER NOT NULL, `alreadyOptimizedCount` INTEGER NOT NULL, `skippedNoProfileCount` INTEGER NOT NULL, `failedOrRefusedCount` INTEGER NOT NULL, `unverifiedCount` INTEGER NOT NULL, `osAdjustedFilterCount` INTEGER NOT NULL DEFAULT 0, `skippedNotApplicableCount` INTEGER NOT NULL DEFAULT 0, `verificationUnavailableCount` INTEGER NOT NULL DEFAULT 0, `canceledCount` INTEGER NOT NULL, `artStorageDeltaBytes` INTEGER NOT NULL DEFAULT 0, `storageTotalBeforeBytes` INTEGER NOT NULL, `storageAvailableBeforeBytes` INTEGER NOT NULL, `storageReserveBytes` INTEGER NOT NULL, `storageCapturedBeforeAtMs` INTEGER NOT NULL, `storageTotalAfterBytes` INTEGER, `storageAvailableAfterBytes` INTEGER, `storageCapturedAfterAtMs` INTEGER, `appVersionName` TEXT NOT NULL, `appVersionCode` INTEGER NOT NULL, `deviceManufacturer` TEXT NOT NULL, `deviceModel` TEXT NOT NULL, `sdkInt` INTEGER NOT NULL, `buildFingerprint` TEXT NOT NULL, `android_build` TEXT NOT NULL DEFAULT '', `art_module_version` TEXT NOT NULL DEFAULT 'unknown', `threadPolicy` TEXT NOT NULL, `exportUri` TEXT, `exportError` TEXT, `exportedAtMs` INTEGER, PRIMARY KEY(`runId`))",
+        "fields": [
+          {
+            "fieldPath": "runId",
+            "columnName": "runId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "modeKey",
+            "columnName": "modeKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "requestedCompilerFilter",
+            "columnName": "requestedCompilerFilter",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fullDexoptScope",
+            "columnName": "fullDexoptScope",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "forceOptimize",
+            "columnName": "forceOptimize",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "statusMessage",
+            "columnName": "statusMessage",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "startedAtMs",
+            "columnName": "startedAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "finishedAtMs",
+            "columnName": "finishedAtMs",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "totalTargetedCount",
+            "columnName": "totalTargetedCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "processedCount",
+            "columnName": "processedCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "optimizedSucceededCount",
+            "columnName": "optimizedSucceededCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "alreadyOptimizedCount",
+            "columnName": "alreadyOptimizedCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "skippedNoProfileCount",
+            "columnName": "skippedNoProfileCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "failedOrRefusedCount",
+            "columnName": "failedOrRefusedCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unverifiedCount",
+            "columnName": "unverifiedCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "osAdjustedFilterCount",
+            "columnName": "osAdjustedFilterCount",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "skippedNotApplicableCount",
+            "columnName": "skippedNotApplicableCount",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "verificationUnavailableCount",
+            "columnName": "verificationUnavailableCount",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "canceledCount",
+            "columnName": "canceledCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "artStorageDeltaBytes",
+            "columnName": "artStorageDeltaBytes",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "storageTotalBeforeBytes",
+            "columnName": "storageTotalBeforeBytes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "storageAvailableBeforeBytes",
+            "columnName": "storageAvailableBeforeBytes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "storageReserveBytes",
+            "columnName": "storageReserveBytes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "storageCapturedBeforeAtMs",
+            "columnName": "storageCapturedBeforeAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "storageTotalAfterBytes",
+            "columnName": "storageTotalAfterBytes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "storageAvailableAfterBytes",
+            "columnName": "storageAvailableAfterBytes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "storageCapturedAfterAtMs",
+            "columnName": "storageCapturedAfterAtMs",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "appVersionName",
+            "columnName": "appVersionName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "appVersionCode",
+            "columnName": "appVersionCode",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceManufacturer",
+            "columnName": "deviceManufacturer",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceModel",
+            "columnName": "deviceModel",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sdkInt",
+            "columnName": "sdkInt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "buildFingerprint",
+            "columnName": "buildFingerprint",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "androidBuild",
+            "columnName": "android_build",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "artModuleVersion",
+            "columnName": "art_module_version",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'unknown'"
+          },
+          {
+            "fieldPath": "threadPolicy",
+            "columnName": "threadPolicy",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "exportUri",
+            "columnName": "exportUri",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "exportError",
+            "columnName": "exportError",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "exportedAtMs",
+            "columnName": "exportedAtMs",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "runId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_optimization_runs_startedAtMs",
+            "unique": false,
+            "columnNames": [
+              "startedAtMs"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_optimization_runs_startedAtMs` ON `${TABLE_NAME}` (`startedAtMs`)"
+          },
+          {
+            "name": "index_optimization_runs_status",
+            "unique": false,
+            "columnNames": [
+              "status"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_optimization_runs_status` ON `${TABLE_NAME}` (`status`)"
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '427f5a602f2c07ad8b9adfbc1f1cdd64')"
+    ]
+  }
+}

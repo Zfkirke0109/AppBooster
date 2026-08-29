@@ -11,6 +11,37 @@ This checklist validates the signed Galaxy OptiDroid release on a Samsung Galaxy
 
 ## Install And Launch
 
+Use the validation harness so signer compatibility and log capture are proven
+before installation. Raw evidence is written under the ignored `validation/`
+directory.
+
+```powershell
+.\tools\Invoke-S23Validation.ps1 -Action VerifyArtifact
+.\tools\Invoke-S23Validation.ps1 -Action NewSession -Serial <ADB_SERIAL>
+.\tools\Invoke-S23Validation.ps1 -Action StartCapture
+.\tools\Invoke-S23Validation.ps1 -Action Install
+.\tools\Invoke-S23Validation.ps1 -Action Launch
+```
+
+`NewSession` refuses to continue if the connected model is not `SM-S918U1` or
+if an installed Galaxy OptiDroid package has an incompatible certificate.
+`Install` also rechecks both certificates and requires an active logcat capture.
+It never uninstalls the app or clears app data.
+
+After the manual scan, one-package optimization, rollback, cancellation, and UI
+checks, capture the final state and stop logcat:
+
+```powershell
+.\tools\Invoke-S23Validation.ps1 -Action Snapshot
+.\tools\Invoke-S23Validation.ps1 -Action StopCapture
+```
+
+The final capture summary counts crash, ANR, and Binder-failure signatures and
+stores package, WorkManager, memory, frame, battery, thermal, ART, UI hierarchy,
+and screenshot evidence for debugging.
+
+Direct installation commands are retained below only as a manual fallback:
+
 ```powershell
 adb devices
 adb install -r app\build\outputs\apk\release\app-release.apk
@@ -210,3 +241,256 @@ fixes), Full Compile / DEXopt All across the whole device.
   position the instant a scan completes; a tap aimed at Stop can start an
   optimization run. Suggested fix: debounce the control for ~1s after a
   phase transition. Tracked as a follow-up task.
+
+---
+
+# 2026-07-16 Runtime Telemetry Validation (1.7.0)
+
+Validated the uncommitted runtime-telemetry implementation on the locked,
+non-root Samsung Galaxy S23 Ultra over wireless ADB. No direct `dex2oat`,
+profile-directory access, CPU controls, system partition changes, or
+`everything` commands were used.
+
+## Device and app identity
+
+- ADB serial alias: `adb-R5CW6160LLN-Va93OQ._adb-tls-connect._tcp`
+- Device: Samsung `SM-S918U1`, Android 16, SDK 36
+- Galaxy OptiDroid: `1.7.0` / `10700`
+- Shizuku service was running; notification and Shizuku API permissions were
+  granted before the run.
+
+## One-package telemetry run
+
+- Run ID: `1784268919835`
+- Mode: `HEAVY_APPS_SPEED`
+- Target: `com.deniscerri.ytdl`
+- Recorded command: `cmd package compile -m speed -f com.deniscerri.ytdl`
+- Exit code/stdout: `0` / `Success`
+- Command duration: `5947 ms`
+- Verification: `package-manager-resolver`
+- Compiler filter: `speed-profile` before, `speed` after
+- Terminal result: `COMPLETED`; WorkManager `WorkSpec.state = 2` (succeeded)
+- Counters: 1 targeted, 1 processed, 1 verified optimized, 0 failed/refused,
+  0 unverified, 0 canceled
+
+This selected-app run used normal dexopt scope and therefore did not include
+`--full`. It does not replace the earlier all-app Full Compile / DEXopt All
+evidence above, which captured `cmd package compile -m speed -f --full -v
+<package>` on the same Android build.
+
+## Storage and export evidence
+
+- Run-level available storage: `211273121792` bytes before and
+  `211251150848` bytes after.
+- Step-level available storage: `211272798208` bytes before and
+  `211253121024` bytes after.
+- Reserve policy recorded: `5368709120` bytes (5 GiB).
+- Thread policy recorded: `package-manager-managed`.
+- Export URI: `content://media/external/downloads/275992`.
+- Export file:
+  `Download/Galaxy OptiDroid/Telemetry/galaxy-optidroid-run-1784268919835-1784268933736.json`
+- Room and JSON counters, command metadata, storage snapshots, compiler
+  filters, duration, and verification source matched exactly.
+- The JSON labels storage values as device-volume observations, not
+  per-package DEX/VDEX/ART sizes.
+
+## Live ART evidence
+
+After the run, `cmd package dump com.deniscerri.ytdl` reported:
+
+```text
+Dexopt state:
+  arm64: [status=speed] [reason=cmdline] [primary-abi]
+```
+
+No optimization foreground service remained active after completion. Stop and
+cancel were not repeated during this one-package telemetry run; the earlier
+2026-07-10 live cancellation result remains documented above, and the current
+branch's cancellation terminal-state coverage is part of the final unit-test
+gate.
+
+---
+
+# 2026-07-17 Full Manual Runtime Run and Binder Finding
+
+The owner manually launched the installed `1.7.0` (`10700`) debug build and ran
+Full DEXtoOAT Speed to completion while full-system Logcat capture was active.
+The run used only the Shizuku UserService and allowlisted package-manager
+commands.
+
+## Terminal run evidence
+
+- Run ID: `1784272575160`
+- Mode: `FULL_DEX2OAT_SPEED`
+- Requested filter: `speed`; normal dexopt scope (`fullDexoptScope=false`)
+- First command:
+  `cmd package compile -m speed -f com.samsung.android.engineapp.camerashift`
+- Last command: `cmd package compile -m speed -f com.samsung.android.gru`
+- 768 targeted; 766 compile steps; 681 verified optimized; 2 already matching;
+  0 failed/refused; 85 unverified; 0 canceled
+- All 766 issued compile commands returned exit code 0.
+- Room terminal state: `COMPLETED_WITH_ISSUES`.
+- WorkManager terminal log: `Worker result SUCCESS` for `OptimizationWorker`.
+- No `FATAL EXCEPTION`, app-process crash, or app ANR was present in the
+  capture.
+
+The result is intentionally not reported as clean success. The 85 packages
+whose post-run evidence could not be proven remain `UNVERIFIED`, even though
+their compile commands exited successfully.
+
+## Telemetry agreement
+
+- JSON export URI: `content://media/external/downloads/276108`
+- Export file:
+  `Download/Galaxy OptiDroid/Telemetry/galaxy-optidroid-run-1784272575160-1784282844599.json`
+- MediaStore row: 753614 bytes and `is_pending=0`.
+- JSON schema version: 1; 766 steps (681 `SUCCEEDED`, 85 `UNVERIFIED`).
+- JSON and Room run counters matched exactly.
+- Available device-volume storage was `207730642944` bytes before and
+  `181459001344` bytes after. This is a device-volume observation, not a claim
+  that the roughly 24.47 GiB delta is package-specific DEX/VDEX/ART usage.
+- Reserve: 5 GiB; thread policy: `package-manager-managed`.
+
+## Binder defect found
+
+Post-compile `cmd package dump <package>` output reached 3.7-4.6 MB. Returning
+that text through `IShellService.executeCommand()` exceeded Binder transaction
+capacity and produced repeated `FAILED BINDER TRANSACTION` /
+`DeadObjectException` failures. The worker recovered and continued, but those
+verification failures contributed to the unverified count and repeatedly
+rebound the UserService. The once-per-run `dumpsys package dexopt` output was
+measured separately at 366144 characters (about 732 KB as an AIDL UTF-16
+reply).
+
+The branch now filters per-package dump output inside the UserService to retain
+only ART/compiler, timestamp, and overlay evidence; caps stdout/stderr before
+crossing Binder; and calls the global resolver only when direct package or
+verbose evidence is unavailable. The S23's complete current global dexopt dump
+fits below the selected cap. Focused and full unit tests pass; a post-fix device
+smoke test remains part of the final instrumented/install gate.
+
+## Post-fix build and signing gate
+
+The final Binder-safe source passed `runUnitTests`, `:app:assembleDebug`, and
+`:app:assembleRelease` on 2026-07-17. The release APK reports application ID
+`com.zfkirke0109.galaxyoptidroid`, version name `1.7.0`, and version code
+`10700`. `apksigner verify --verbose --print-certs` verified APK Signature
+Scheme v2 with one RSA-4096 signer (`CN=Zfkirke0109`) and certificate SHA-256
+`bb93cab28f64a1cd14c92f771a91d4e000498448723cff3c6571a48cc6715723`.
+
+The remaining gate is `runInstrumentedTests` and a short post-fix device smoke
+test confirming bounded Shizuku replies no longer cause Binder transaction
+failures. The earlier pre-fix full-run counters remain valid historical
+evidence and are intentionally not rewritten as post-fix results.
+
+## Connected tests and reinstall
+
+`runInstrumentedTests` completed against the physical `SM-S918U1` over the
+stable wireless ADB serial
+`adb-R5CW6160LLN-Va93OQ._adb-tls-connect._tcp`: 3 tests finished with 0
+failures and Gradle reported `BUILD SUCCESSFUL in 4m 1s`. This exercises the
+Room 1-to-2 migration, MediaStore telemetry export, and existing application-ID
+instrumentation coverage on Android 16.
+
+Android Gradle Plugin removed the tested app when the connected suite ended.
+The final debug APK was then reinstalled successfully without launching it.
+Package Manager reports version `1.7.0` (`10700`), notification permission
+granted, and `moe.shizuku.manager.permission.API_V23` granted. PR #5 CI also
+passed the signing-secret scan and unit-test jobs; release jobs correctly
+skipped on the pull-request event.
+
+Only a short manual post-fix Binder smoke remains: run one selected non-system
+package in Gaming / Heavy Apps and confirm that package verification finishes
+without `FAILED BINDER TRANSACTION` or `DeadObjectException`. An all-device
+compile must not be repeated for this check.
+
+---
+
+# 2026-07-21 Upstream 1.7.0 And Runtime Hardening Gate
+
+## Upstream release comparison
+
+- Latest upstream release: `v1.7.0-10700` (`c963005`), published 2026-07-20.
+- The exact upstream tag diff from `v1.6.1-10601` changes 13 files: versioning,
+  app version display, activity-feed layout/autoscroll, and release-signing
+  workflow behavior. Shizuku app visibility and binder-first handling are from
+  the earlier `v1.6.0-10600` to `v1.6.1-10601` delta and are also incorporated.
+- Galaxy OptiDroid remains `1.7.0 / 10700` and now incorporates all applicable
+  app behavior from that release.
+- The fork intentionally does not adopt upstream's `PS_RELEASE_*` secrets.
+  Its existing five-secret shared-signing contract additionally checks the
+  expected SHA-256 certificate and is therefore stricter.
+
+## Source fixes validated
+
+- Shizuku uses a sticky binder listener and binder-first state detection.
+- Terminal Room runs are excluded from resumable-step lookup.
+- Resume clears stale export URI/error/timestamp values.
+- Retention pruning runs for terminal export success and failure paths.
+- Analysis notifications are deduplicated and rate-limited to one update per
+  second, with terminal updates delivered immediately.
+- The activity feed follows the newest retained entry instead of using an
+  out-of-range index after 50 entries; app label/icon lookup runs on
+  `Dispatchers.IO`.
+- Settings displays BuildConfig version name/code and links to the fork.
+
+## Local validation
+
+- `runUnitTests`: 258 tests, 0 failures, `BUILD SUCCESSFUL in 3m 34s`.
+- `:app:lintDebug :app:assembleDebug :app:compileDebugAndroidTestKotlin`:
+  `BUILD SUCCESSFUL in 6m 1s`.
+- `:app:assembleRelease :app:bundleRelease`: `BUILD SUCCESSFUL in 16m 33s`.
+  R8, resource shrinking, lint-vital, APK packaging, and AAB signing completed.
+- `tasks --all`: `BUILD SUCCESSFUL in 1m 10s`; the root convenience tasks
+  `runUnitTests`, `runInstrumentedTests`, and `runAllTests` are present.
+- Debug `output-metadata.json`: package
+  `com.zfkirke0109.galaxyoptidroid`, version name `1.7.0`, version code `10700`.
+- Release `output-metadata.json` reports the same package and version. The APK
+  verifies with APK Signature Scheme v2 and the AAB certificate verifies with
+  `keytool`; both use RSA-4096 signer SHA-256 `bb93...5723`.
+- PR #5 checks for source checkpoint `7f1c44b`: signing-secret scan passed and
+  unit tests passed. Release and publish jobs correctly skipped for the PR
+  event.
+- Workflow hardening checkpoint `4895aa2` pins every JavaScript action to an
+  immutable Node 24 commit SHA. `actionlint 1.7.12` passed. Gradle Setup remains
+  on permissive `v5.0.2` because v6 introduces separate proprietary caching
+  terms.
+- Manual-dispatch run `29859227588`: signing-secret scan passed in 5s, unit
+  tests passed in 2m 34s, signed APK/AAB build and signature verification
+  passed in 3m 17s, artifacts uploaded, release publication skipped, and no
+  Node.js 20 deprecation annotation remained.
+- The earlier downloaded CI APK is package `com.zfkirke0109.galaxyoptidroid`, version
+  `1.7.0` (`10700`), compile/target SDK 36, and APK Signature Scheme v2 signed
+  with shared certificate `1845...7219`.
+- The five active GitHub Actions signing secrets were then replaced from the
+  local historical keystore without exposing values. Manual-dispatch run
+  `29860734093` passed secret scanning, 258 unit tests, signed APK/AAB build,
+  fingerprint verification, cleanup, and artifact upload. The downloaded APK
+  and AAB both verify with historical RSA-4096 certificate `bb93...5723`.
+- The current local gate rerun passed `runUnitTests`, `:app:lintDebug`,
+  `:app:assembleDebug`, and `:app:compileDebugAndroidTestKotlin` in 8m 10s:
+  258 tests, 0 failures/errors/skips.
+- The pre-install harness passes PowerShell parsing and PSScriptAnalyzer 1.25.0
+  with no warnings or errors. It independently verifies the exact CI APK as
+  package `com.zfkirke0109.galaxyoptidroid`, version `1.7.0` (`10700`), signer
+  `bb93...5723`, and records its SHA-256 before allowing installation.
+
+## Signing continuity resolution and device gate
+
+Signing continuity is restored: local release, CI APK, and CI AAB now use the
+historical certificate ending in `5723`. No release APK has been installed yet.
+Wireless ADB later reconnected and
+`NewSession` verified the SM-S918U1/Android 16 build, then correctly refused
+installation because the installed `1.7.0/10700` debug APK uses signer
+`87f6...eb1a`, not historical release signer `bb93...5723`.
+
+No install, uninstall, or data clear occurred. Ignored local session
+`validation/s23_20260721_123028` contains the installed APK, preinstall device
+snapshot, a `run-as` archive of app-owned data (24 entries), six exported
+telemetry JSON files, and a 35-file SHA-256 manifest. The copied Room database
+passes `PRAGMA integrity_check` with `ok`.
+
+Replacing the debug-signed app requires uninstalling it, which clears its live
+app data. Proceed only after explicit owner approval. After uninstall, rerun
+`NewSession`; it must report `Install allowed without uninstall: True` before
+arming capture and installing the historical-signed CI artifact.

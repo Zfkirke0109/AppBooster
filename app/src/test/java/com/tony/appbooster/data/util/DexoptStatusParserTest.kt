@@ -1,5 +1,6 @@
 package com.tony.appbooster.data.util
 
+import com.tony.appbooster.domain.model.telemetry.OptimizationStepOutcome
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -13,6 +14,65 @@ import org.junit.Test
  * reliable parsing across device variants.
  */
 class DexoptStatusParserTest {
+
+    @Test
+    fun `speed request adjusted to verify is classified and sized from ART result`() {
+        val output = """
+            DexContainerFileDexoptResult{actualCompilerFilter=verify, status=PERFORMED, sizeBytes=1884388, sizeBeforeBytes=1999000}
+            Final Status: PERFORMED
+        """.trimIndent()
+
+        val result = DexoptStatusParser.classifyCompileResult("speed", 0, output)
+
+        assertEquals(OptimizationStepOutcome.OS_ADJUSTED_FILTER, result.outcome)
+        assertEquals("verify", result.art.actualCompilerFilter)
+        assertEquals("PERFORMED", result.art.status)
+        assertEquals("PERFORMED", result.art.finalStatus)
+        assertEquals(1_884_388L, result.art.sizeBytes)
+        assertEquals(1_999_000L, result.art.sizeBeforeBytes)
+        assertEquals(-114_612L, result.art.storageDeltaBytes)
+        assertTrue(result.stableOsAdjusted)
+    }
+
+    @Test
+    fun `speed request adjusted to speed-profile and skipped is not applicable`() {
+        val output = """
+            DexContainerFileDexoptResult{actualCompilerFilter=speed-profile, status=SKIPPED, sizeBytes=50, sizeBeforeBytes=50}
+            Final Status: SKIPPED
+        """.trimIndent()
+
+        val result = DexoptStatusParser.classifyCompileResult("speed", 0, output)
+
+        assertEquals(OptimizationStepOutcome.SKIPPED_NOT_APPLICABLE, result.outcome)
+        assertEquals("speed-profile", result.art.actualCompilerFilter)
+        assertTrue(result.stableOsAdjusted)
+    }
+
+    @Test
+    fun `successful shell response without actual ART filter is verification unavailable`() {
+        val result = DexoptStatusParser.classifyCompileResult("speed", 0, "Success")
+
+        assertEquals(OptimizationStepOutcome.VERIFICATION_UNAVAILABLE, result.outcome)
+        assertNull(result.art.actualCompilerFilter)
+        assertFalse(result.stableOsAdjusted)
+    }
+
+    @Test
+    fun `nonzero shell exit is failed or refused even if verbose output contains a filter`() {
+        val output = "actualCompilerFilter=speed, status=PERFORMED"
+
+        val result = DexoptStatusParser.classifyCompileResult("speed", 255, output)
+
+        assertEquals(OptimizationStepOutcome.FAILED_OR_REFUSED, result.outcome)
+        assertEquals("speed", result.art.actualCompilerFilter)
+    }
+
+    @Test
+    fun `package flags distinguish resource-only packages from code packages`() {
+        assertEquals(false, DexoptStatusParser.parsePackageHasCode("pkgFlags=[ SYSTEM ]"))
+        assertEquals(true, DexoptStatusParser.parsePackageHasCode("pkgFlags=[ SYSTEM HAS_CODE ]"))
+        assertNull(DexoptStatusParser.parsePackageHasCode("Dexopt state:"))
+    }
 
     // ── parseCompileCheckNeedsOptimization ───────────────────────────────────
 

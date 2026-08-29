@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="optimization_notification_channel_name">Ottimizzazione</string>
+    <string name="optimization_notification_channel_description">Mostra l’avanzamento mentre le app vengono compilate</string>
+    <string name="optimization_notification_preparing">Preparazione ottimizzazione…</string>
+    <string name="optimization_notification_stop">Interrompi</string>
+</resources>

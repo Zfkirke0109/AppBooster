@@ -12,6 +12,14 @@ import org.junit.Test
  */
 class ShellCommandSpecTest {
 
+    @Test(expected = IllegalArgumentException::class)
+    fun `given everything compile filter when command created then rejects unsupported mode`() {
+        ShellCommandSpec.PackageCompile(
+            packageName = "com.example.app",
+            mode = "everything"
+        )
+    }
+
     @Test
     fun `given valid package name when validated then returns true`() {
         assertTrue(PackageNameValidator.isValid("com.example_app.camera2"))

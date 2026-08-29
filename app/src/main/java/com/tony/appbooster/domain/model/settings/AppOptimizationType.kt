@@ -64,9 +64,6 @@ enum class AppOptimizationType(
             } ?: when (normalized.lowercase()) {
                 "speed-profile" -> SPEED_PROFILE
                 "speed" -> FULL_DEX2OAT_SPEED
-                // Historical raw-filter value from builds that advertised `everything`;
-                // resolve it to the mode that owns the full-compile intent.
-                "everything" -> ADVANCED_FULL_COMPILE
                 // Preserve the old two-mode selector semantics for existing DataStore values.
                 "full_optimization" -> HEAVY_APPS_SPEED
                 else -> null

@@ -46,6 +46,8 @@
     <string name="dashboard_result_failed_title">Ottimizzazione fallita</string>
     <string name="dashboard_result_paused_title">Ottimizzazione in pausa</string>
     <string name="dashboard_result_completed_count">%1$d di %2$d app ottimizzate</string>
+    <string name="dashboard_result_completed_issues_title">Completata con problemi</string>
+    <string name="dashboard_result_completed_issues_count">%1$d verificate, %2$d non riuscite/rifiutate, %3$d non verificate</string>
     <string name="dashboard_result_canceled_count">%1$d di %2$d app ottimizzate prima dell’interruzione</string>
     <string name="dashboard_result_failed_count">%1$d di %2$d app ottimizzate prima dell’errore</string>
     <string name="dashboard_terminal_section_title">Output terminale</string>
@@ -161,9 +163,10 @@
 
     <string name="about_app_title">Galaxy OptiDroid</string>
     <string name="about_version_fallback">1.0.0</string>
+    <string name="about_version_code">Codice %1$s</string>
     <string name="about_open_source_title">Open Source</string>
     <string name="about_open_source_description">Visualizza il codice sorgente su GitHub</string>
-    <string name="about_open_source_url">https://github.com/androidexpert35/AppBooster?tab=readme-ov-file</string>
+    <string name="about_open_source_url">https://github.com/Zfkirke0109/AppBooster</string>
     <string name="about_open_source_cd">Repository open source su GitHub</string>
 
     <string name="base_dialog_preview_title">Connessione non riuscita</string>
@@ -186,7 +189,7 @@
     <string name="survival_error_title">Controllo stato fallito</string>
     <string name="survival_value_unknown">Sconosciuto</string>
     <string name="survival_battery_title">Protezione batteria</string>
-    <string name="survival_battery_description">L\'ottimizzazione va in pausa sotto il 35% di batteria per ridurre calore e rischio di spegnimento.</string>
+    <string name="survival_battery_description" formatted="false">L\'ottimizzazione va in pausa sotto il 35% di batteria per ridurre calore e rischio di spegnimento.</string>
     <string name="survival_thermal_title">Protezione termica</string>
     <string name="survival_thermal_description">L\'ottimizzazione va in pausa quando dumpsys thermalservice segnala severe o superiore.</string>
     <string name="survival_standby_title">Bucket standby</string>
@@ -212,6 +215,11 @@
     <string name="analysis_card_needs_optimization">Da ottimizzare</string>
     <string name="analysis_card_optimized">Ottimizzato</string>
     <string name="analysis_card_no_profile">Nessun profilo</string>
+    <string name="analysis_card_failed_refused">Non riuscite / rifiutate</string>
+    <string name="analysis_card_unverified">Non verificate</string>
+    <string name="analysis_card_os_adjusted">Android ha applicato un filtro del compilatore diverso; nessun errore del comando</string>
+    <string name="analysis_card_not_applicable">Ignorata perché ART ha indicato il pacchetto come non applicabile</string>
+    <string name="analysis_card_verification_unavailable">Verifica ART successiva all’esecuzione non disponibile</string>
     <string name="analysis_view_details">Vedi dettagli</string>
 
     <!-- Feed attività -->
@@ -243,4 +251,18 @@
     <string name="log_optimal">Ottimale</string>
     <string name="log_no_profile_never_used">Nessun profilo</string>
     <string name="log_mode_info">Modalità</string>
+
+    <!-- Telemetria di esecuzione -->
+    <string name="settings_section_telemetry_title">Telemetria di esecuzione</string>
+    <string name="settings_section_telemetry_subtitle">Prove di proprietà dell’app dalle ottimizzazioni del gestore pacchetti</string>
+    <string name="telemetry_no_runs">Non è ancora disponibile alcuna telemetria di ottimizzazione.</string>
+    <string name="telemetry_latest_run">Ultima esecuzione n. %1$d</string>
+    <string name="telemetry_status">Stato: %1$s</string>
+    <string name="telemetry_counts">%1$d verificate · %2$d corrispondenti · %3$d non riuscite · %4$d non verificate</string>
+    <string name="telemetry_storage">Spazio libero: %1$s → %2$s</string>
+    <string name="telemetry_exported">Esportata automaticamente in %1$s</string>
+    <string name="telemetry_export_error">Esportazione non riuscita: %1$s</string>
+    <string name="telemetry_export_pending">L’esecuzione finale verrà esportata automaticamente.</string>
+    <string name="telemetry_retry_export">Esporta di nuovo l’ultima</string>
+    <string name="telemetry_exporting">Esportazione…</string>
 </resources>

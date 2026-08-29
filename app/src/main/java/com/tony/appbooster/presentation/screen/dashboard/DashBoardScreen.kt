@@ -186,6 +186,7 @@ private fun DashboardPhoneLayout(
         OptimizationActivityFeed(
             entries = model.logEntries,
             isExpanded = true,
+            fillHeight = true,
             modifier = Modifier
                 .weight(1f)
                 .padding(bottom = 16.dp)

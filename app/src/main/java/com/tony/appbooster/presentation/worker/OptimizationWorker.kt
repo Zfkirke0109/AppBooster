@@ -18,9 +18,11 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Foreground [CoroutineWorker] that runs the app optimization workflow.
@@ -80,18 +82,18 @@ class OptimizationWorker @AssistedInject constructor(
             }
 
             if (isStopped) {
-                repository.cancelOptimization()
-                return@coroutineScope Result.success()
+                withContext(NonCancellable) { repository.cancelOptimization() }
+                throw CancellationException("Optimization worker was stopped")
             }
 
             when (optimizeAppUseCase(mode, forceOptimize)) {
                 is Resource.Success -> Result.success()
                 is Resource.Error -> Result.failure()
             }
-        } catch (_: CancellationException) {
+        } catch (cancellation: CancellationException) {
             // WorkManager cancellation (e.g., notification stop) lands here.
-            repository.cancelOptimization()
-            Result.success()
+            withContext(NonCancellable) { repository.cancelOptimization() }
+            throw cancellation
         } finally {
             notificationJob.cancel()
         }
@@ -106,7 +108,7 @@ class OptimizationWorker @AssistedInject constructor(
         const val KEY_FORCE_OPTIMIZE = "force_optimize"
         // Keep progress updates at ~1/s to stay below Android enqueue shedding thresholds.
         private const val NOTIFICATION_UPDATE_INTERVAL_MILLIS = 1000L
-        private const val NOTIFICATION_LOG_TAG = "OptimizationWorkerNotification"
+        private const val NOTIFICATION_LOG_TAG = "OptiDroidWorkerNotify"
 
         /**
          * Enqueues a unique optimization worker.

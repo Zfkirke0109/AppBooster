@@ -12,12 +12,15 @@ interface OptimizationStepDao {
 
     @Query(
         """
-        SELECT runId FROM optimization_steps
-        WHERE mode = :mode AND forceOptimize = :forceOptimize
-        GROUP BY runId
-        HAVING SUM(CASE WHEN status IN ('PENDING', 'RUNNING') THEN 1 ELSE 0 END) > 0
-           AND SUM(CASE WHEN status IN ('FAILED', 'UNVERIFIED', 'CANCELED') THEN 1 ELSE 0 END) = 0
-        ORDER BY MAX(createdAtMs) DESC
+        SELECT steps.runId FROM optimization_steps AS steps
+        LEFT JOIN optimization_runs AS runs ON runs.runId = steps.runId
+        WHERE steps.mode = :mode
+          AND steps.forceOptimize = :forceOptimize
+          AND (runs.runId IS NULL OR runs.status IN ('RUNNING', 'PAUSED'))
+        GROUP BY steps.runId
+        HAVING SUM(CASE WHEN steps.status IN ('PENDING', 'RUNNING') THEN 1 ELSE 0 END) > 0
+           AND SUM(CASE WHEN steps.status = 'CANCELED' THEN 1 ELSE 0 END) = 0
+        ORDER BY MAX(steps.createdAtMs) DESC
         LIMIT 1
         """
     )
@@ -25,6 +28,31 @@ interface OptimizationStepDao {
 
     @Query("SELECT * FROM optimization_steps WHERE runId = :runId ORDER BY stepIndex ASC")
     suspend fun getStepsForRun(runId: Long): List<OptimizationStepEntity>
+
+    @Query(
+        """
+        SELECT * FROM optimization_steps
+        WHERE packageName = :packageName
+          AND requestedFilter = :requestedFilter
+          AND android_build = :androidBuild
+          AND art_module_version = :artModuleVersion
+          AND stableOsAdjusted = 1
+          AND outcome IN ('OS_ADJUSTED_FILTER', 'SKIPPED_NOT_APPLICABLE')
+          AND (
+              packageLastUpdateTimeMs = :packageLastUpdateTimeMs OR
+              (packageLastUpdateTimeMs IS NULL AND :packageLastUpdateTimeMs IS NULL)
+          )
+        ORDER BY updatedAtMs DESC
+        LIMIT 1
+        """
+    )
+    suspend fun findStableAdjustedOutcome(
+        packageName: String,
+        requestedFilter: String,
+        androidBuild: String,
+        artModuleVersion: String,
+        packageLastUpdateTimeMs: Long?
+    ): OptimizationStepEntity?
 
     @Query(
         """
@@ -122,6 +150,100 @@ interface OptimizationStepDao {
         stdout: String,
         stderr: String,
         updatedAtMs: Long
+    )
+
+    @Query(
+        """
+        UPDATE optimization_steps
+        SET status = :status,
+            afterFilter = :afterFilter,
+            exitCode = :exitCode,
+            stdout = :stdout,
+            stderr = :stderr,
+            updatedAtMs = :updatedAtMs
+        WHERE id = :id
+        """
+    )
+    suspend fun markClassifiedResult(
+        id: Long,
+        status: String,
+        afterFilter: String?,
+        exitCode: Int,
+        stdout: String,
+        stderr: String,
+        updatedAtMs: Long
+    )
+
+    @Query(
+        """
+        UPDATE optimization_steps
+        SET outcome = :outcome,
+            requestedFilter = :requestedFilter,
+            artStatus = :artStatus,
+            artFinalStatus = :artFinalStatus,
+            artSizeBytes = :artSizeBytes,
+            artSizeBeforeBytes = :artSizeBeforeBytes,
+            android_build = :androidBuild,
+            art_module_version = :artModuleVersion,
+            packageLastUpdateTimeMs = :packageLastUpdateTimeMs,
+            stableOsAdjusted = :stableOsAdjusted,
+            updatedAtMs = :updatedAtMs
+        WHERE id = :id
+        """
+    )
+    suspend fun recordOutcome(
+        id: Long,
+        outcome: String,
+        requestedFilter: String,
+        artStatus: String?,
+        artFinalStatus: String?,
+        artSizeBytes: Long?,
+        artSizeBeforeBytes: Long?,
+        androidBuild: String,
+        artModuleVersion: String,
+        packageLastUpdateTimeMs: Long?,
+        stableOsAdjusted: Boolean,
+        updatedAtMs: Long
+    )
+
+    @Query(
+        """
+        UPDATE optimization_steps
+        SET displayCommand = :displayCommand,
+            storageTotalBeforeBytes = :storageTotalBytes,
+            storageAvailableBeforeBytes = :storageAvailableBytes,
+            storageReserveBytes = :storageReserveBytes,
+            storageCapturedBeforeAtMs = :storageCapturedAtMs
+        WHERE id = :id
+        """
+    )
+    suspend fun recordTelemetryStarted(
+        id: Long,
+        displayCommand: String,
+        storageTotalBytes: Long,
+        storageAvailableBytes: Long,
+        storageReserveBytes: Long,
+        storageCapturedAtMs: Long
+    )
+
+    @Query(
+        """
+        UPDATE optimization_steps
+        SET durationMs = :durationMs,
+            storageTotalAfterBytes = :storageTotalBytes,
+            storageAvailableAfterBytes = :storageAvailableBytes,
+            storageCapturedAfterAtMs = :storageCapturedAtMs,
+            verificationSource = :verificationSource
+        WHERE id = :id
+        """
+    )
+    suspend fun recordTelemetryFinished(
+        id: Long,
+        durationMs: Long,
+        storageTotalBytes: Long,
+        storageAvailableBytes: Long,
+        storageCapturedAtMs: Long,
+        verificationSource: String
     )
 
     @Query(

@@ -3,9 +3,15 @@ package com.tony.appbooster.di
 import com.tony.appbooster.data.repository.AppInfoRepositoryImpl
 import com.tony.appbooster.data.repository.DeviceGuardRepositoryImpl
 import com.tony.appbooster.data.repository.SettingsDataStoreRepository
+import com.tony.appbooster.data.telemetry.AndroidStorageCapacityProvider
+import com.tony.appbooster.data.telemetry.MediaStoreTelemetryExporter
+import com.tony.appbooster.data.telemetry.OptimizationTelemetryRepositoryImpl
 import com.tony.appbooster.domain.repository.AppInfoRepository
 import com.tony.appbooster.domain.repository.DeviceGuardRepository
 import com.tony.appbooster.domain.repository.SettingsRepository
+import com.tony.appbooster.domain.repository.OptimizationTelemetryRepository
+import com.tony.appbooster.domain.service.StorageCapacityProvider
+import com.tony.appbooster.domain.service.TelemetryExporter
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -58,4 +64,22 @@ abstract class RepositoryModule {
     abstract fun bindDeviceGuardRepository(
         impl: DeviceGuardRepositoryImpl
     ): DeviceGuardRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindOptimizationTelemetryRepository(
+        impl: OptimizationTelemetryRepositoryImpl
+    ): OptimizationTelemetryRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindStorageCapacityProvider(
+        impl: AndroidStorageCapacityProvider
+    ): StorageCapacityProvider
+
+    @Binds
+    @Singleton
+    abstract fun bindTelemetryExporter(
+        impl: MediaStoreTelemetryExporter
+    ): TelemetryExporter
 }

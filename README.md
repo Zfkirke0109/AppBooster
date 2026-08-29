@@ -256,7 +256,7 @@ The repository includes a GitHub Actions workflow at `.github/workflows/android-
 | **Signed release build** | Push to `master`, `main`, or `v*` tags, after tests pass | Builds signed APK + AAB and verifies the APK signature with `apksigner` |
 | **Publish GitHub Release** | Push to `v*` tags only | Creates a GitHub Release from recent commit notes and attaches the APK & AAB |
 
-Release publishing is tag-driven. Push a tag such as `v1.6.0` after on-device validation to publish a GitHub Release.
+Release publishing is tag-driven. Push a tag such as `v1.7.0` after on-device validation to publish a GitHub Release.
 
 > **Changelog**: The release workflow generates notes from commits since the previous tag. If no prior tag exists, it uses recent commits for the initial release notes.
 
@@ -264,12 +264,13 @@ Configure these repository secrets:
 
 | Secret | Purpose |
 |--------|---------|
-| `GH_RELEASE_KEYSTORE_BASE64` | Base64-encoded contents of the release keystore file |
-| `GH_RELEASE_KEY_ALIAS` | Alias of the release key inside the keystore |
-| `GH_RELEASE_KEY_PASSWORD` | Password for the selected key alias |
-| `GH_RELEASE_STORE_PASSWORD` | Password for the keystore itself |
+| `KEYSTORE_BASE64` | Base64-encoded contents of the release keystore file |
+| `KEY_ALIAS` | Alias of the release key inside the keystore |
+| `KEY_PASSWORD` | Password for the selected key alias |
+| `KEYSTORE_PASSWORD` | Password for the keystore itself |
+| `EXPECTED_SIGNER_SHA256` | Expected SHA-256 certificate fingerprint used to reject the wrong key |
 
-All four secrets are **required** for the release & publish jobs. Unit tests still run on every push and PR regardless of secrets.
+All five secrets are **required** for the release & publish jobs. Unit tests still run on every push and PR regardless of secrets.
 
 Signing secrets must stay out of source control. Keep local signing values in `~/.gradle/gradle.properties`, not the tracked root `gradle.properties`. See `docs/s23-ultra-validation.md` for the release APK validation checklist.
 

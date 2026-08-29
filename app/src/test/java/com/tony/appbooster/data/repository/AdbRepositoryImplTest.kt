@@ -20,9 +20,14 @@ import com.tony.appbooster.domain.model.device.ThermalStatusSnapshot
 import com.tony.appbooster.domain.model.settings.AppOptimizationType
 import com.tony.appbooster.domain.repository.DeviceGuardRepository
 import com.tony.appbooster.domain.repository.SettingsRepository
+import com.tony.appbooster.domain.repository.OptimizationTelemetryRepository
+import com.tony.appbooster.domain.service.StorageCapacityProvider
+import com.tony.appbooster.domain.service.TelemetryExporter
+import com.tony.appbooster.domain.model.telemetry.StorageSnapshot
 import io.mockk.coJustRun
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.CancellationException
@@ -46,6 +51,9 @@ class AdbRepositoryImplTest {
     private lateinit var optimizationStepDao: OptimizationStepDao
     private lateinit var deviceGuardRepository: DeviceGuardRepository
     private lateinit var settingsRepository: SettingsRepository
+    private lateinit var telemetryRepository: OptimizationTelemetryRepository
+    private lateinit var storageCapacityProvider: StorageCapacityProvider
+    private lateinit var telemetryExporter: TelemetryExporter
     private lateinit var repository: AdbRepositoryImpl
 
     @Before
@@ -54,9 +62,13 @@ class AdbRepositoryImplTest {
         logger = OptimizationLogger()
         packageQuery = mockk()
         compilationResolver = mockk(relaxed = true)
-        optimizationStepDao = mockk()
+        optimizationStepDao = mockk(relaxed = true)
         deviceGuardRepository = mockk()
         settingsRepository = mockk()
+        telemetryRepository = mockk(relaxed = true)
+        storageCapacityProvider = mockk()
+        telemetryExporter = mockk(relaxed = true)
+        every { storageCapacityProvider.snapshot() } returns allowedStorageSnapshot()
         coEvery {
             deviceGuardRepository.getDeviceGuardSnapshot()
         } returns Resource.Success(allowedDeviceGuardSnapshot())
@@ -68,7 +80,10 @@ class AdbRepositoryImplTest {
             compilationResolver = compilationResolver,
             optimizationStepDao = optimizationStepDao,
             deviceGuardRepository = deviceGuardRepository,
-            settingsRepository = settingsRepository
+            settingsRepository = settingsRepository,
+            telemetryRepository = telemetryRepository,
+            storageCapacityProvider = storageCapacityProvider,
+            telemetryExporter = telemetryExporter
         )
     }
 
@@ -163,6 +178,9 @@ class AdbRepositoryImplTest {
         verify(exactly = 1) { compilationResolver.markOptimized(goodPackage) }
         verify(exactly = 0) { compilationResolver.markOptimized(failingPackage) }
         coVerify(exactly = 1) {
+            compilationResolver.queryPackageCompilationInfo(goodPackage, "speed-profile")
+        }
+        coVerify(exactly = 1) {
             shellDataSource.executeCommandDetailed(goodCommand)
         }
         coVerify(exactly = 1) {
@@ -248,10 +266,120 @@ class AdbRepositoryImplTest {
     }
 
     @Test
+    fun `given resumable run has terminal issues when optimization resumes then preserves counts and runs only pending work`() = runTest {
+        val succeededPackage = "com.example.succeeded"
+        val failedPackage = "com.example.failed"
+        val unverifiedPackage = "com.example.unverified"
+        val pendingPackage = "com.example.pending"
+        val runId = 78L
+        val steps = listOf(
+            optimizationStep(
+                id = 20L,
+                runId = runId,
+                stepIndex = 0,
+                packageName = succeededPackage,
+                status = OptimizationStepStatus.SUCCEEDED
+            ),
+            optimizationStep(
+                id = 21L,
+                runId = runId,
+                stepIndex = 1,
+                packageName = failedPackage,
+                status = OptimizationStepStatus.FAILED
+            ),
+            optimizationStep(
+                id = 22L,
+                runId = runId,
+                stepIndex = 2,
+                packageName = unverifiedPackage,
+                status = OptimizationStepStatus.UNVERIFIED
+            ),
+            optimizationStep(
+                id = 23L,
+                runId = runId,
+                stepIndex = 3,
+                packageName = pendingPackage
+            )
+        )
+        val pendingCommand = ShellCommandSpec.PackageCompile(
+            packageName = pendingPackage,
+            mode = "speed-profile",
+            force = true
+        )
+
+        coEvery { optimizationStepDao.findLatestResumableRunId("SPEED_PROFILE", true) } returns runId
+        coEvery { optimizationStepDao.prepareResumedRun(runId, any()) } returns steps
+        coJustRun { optimizationStepDao.markRunning(steps.last().id, "verify", any()) }
+        coJustRun {
+            optimizationStepDao.markSucceeded(
+                id = steps.last().id,
+                afterFilter = "speed-profile",
+                exitCode = 0,
+                stdout = "Success",
+                stderr = "",
+                updatedAtMs = any()
+            )
+        }
+        coEvery {
+            compilationResolver.queryPackageCompilationInfo(pendingPackage, "speed-profile")
+        } returnsMany listOf(
+            compilationInfo(pendingPackage, compilerFilter = "verify"),
+            compilationInfo(pendingPackage, compilerFilter = "speed-profile", needsOptimization = false)
+        )
+        coEvery {
+            shellDataSource.executeCommandDetailed(pendingCommand)
+        } returns Result.success(ShellCommandResult(exitCode = 0, stdout = "Success", stderr = ""))
+        stubPackageDump(pendingPackage, "speed-profile")
+
+        val result = repository.executeOptimizationCommand(
+            mode = AppOptimizationType.SPEED_PROFILE,
+            forceOptimize = true
+        )
+
+        assertTrue(result is Resource.Success)
+        assertTrue(repository.optimizationProgress.value.result is OptimizationResult.CompletedWithIssues)
+        assertEquals(4, repository.optimizationProgress.value.processedCount)
+        assertEquals(2, repository.optimizationProgress.value.optimizedSucceededCount)
+        assertEquals(1, repository.optimizationProgress.value.failedOrRefusedCount)
+        assertEquals(1, repository.optimizationProgress.value.unverifiedCount)
+        assertEquals(1f, repository.optimizationProgress.value.progress)
+        coVerify(exactly = 0) { packageQuery.queryInstalledPackages() }
+        listOf(succeededPackage, failedPackage, unverifiedPackage).forEach { packageName ->
+            coVerify(exactly = 0) {
+                shellDataSource.executeCommandDetailed(match {
+                    it is ShellCommandSpec.PackageCompile && it.packageName == packageName
+                })
+            }
+        }
+        coVerify(exactly = 1) { shellDataSource.executeCommandDetailed(pendingCommand) }
+    }
+
+    @Test
     fun `given battery is below guard when optimization starts then pauses without compiling`() = runTest {
+        coEvery { optimizationStepDao.findLatestResumableRunId("SPEED_PROFILE", true) } returns null
         coEvery {
             deviceGuardRepository.getDeviceGuardSnapshot()
         } returns Resource.Success(allowedDeviceGuardSnapshot(batteryPercent = 20))
+
+        val result = repository.executeOptimizationCommand(
+            mode = AppOptimizationType.SPEED_PROFILE,
+            forceOptimize = true
+        )
+
+        assertTrue(result is Resource.Error)
+        assertTrue(repository.optimizationProgress.value.result is OptimizationResult.Paused)
+        coVerify(exactly = 0) { packageQuery.queryInstalledPackages() }
+        coVerify(exactly = 0) { shellDataSource.executeCommandDetailed(any()) }
+    }
+
+    @Test
+    fun `given storage is below reserve when optimization starts then pauses before compiling`() = runTest {
+        coEvery { optimizationStepDao.findLatestResumableRunId("SPEED_PROFILE", true) } returns null
+        every { storageCapacityProvider.snapshot() } returns StorageSnapshot(
+            totalBytes = 128L * 1024L * 1024L * 1024L,
+            availableBytes = 4L * 1024L * 1024L * 1024L,
+            capturedAtMs = 2L
+        )
 
         val result = repository.executeOptimizationCommand(
             mode = AppOptimizationType.SPEED_PROFILE,
@@ -504,12 +632,17 @@ class AdbRepositoryImplTest {
             throw CancellationException("Worker cancelled")
         }
 
-        val result = repository.executeOptimizationCommand(
-            mode = AppOptimizationType.SPEED_PROFILE,
-            forceOptimize = true
-        )
+        var cancellationPropagated = false
+        try {
+            repository.executeOptimizationCommand(
+                mode = AppOptimizationType.SPEED_PROFILE,
+                forceOptimize = true
+            )
+        } catch (_: CancellationException) {
+            cancellationPropagated = true
+        }
 
-        assertTrue(result is Resource.Success)
+        assertTrue(cancellationPropagated)
         assertFalse(repository.optimizationProgress.value.isRunning)
         assertEquals("", repository.optimizationProgress.value.currentAppPackage)
         assertTrue(repository.optimizationProgress.value.result is OptimizationResult.Canceled)
@@ -539,12 +672,17 @@ class AdbRepositoryImplTest {
         coEvery { shellDataSource.executeCommandDetailed(command) } returns
             Result.failure(CancellationException("Worker cancelled"))
 
-        val result = repository.executeOptimizationCommand(
-            mode = AppOptimizationType.SPEED_PROFILE,
-            forceOptimize = true
-        )
+        var cancellationPropagated = false
+        try {
+            repository.executeOptimizationCommand(
+                mode = AppOptimizationType.SPEED_PROFILE,
+                forceOptimize = true
+            )
+        } catch (_: CancellationException) {
+            cancellationPropagated = true
+        }
 
-        assertTrue(result is Resource.Success)
+        assertTrue(cancellationPropagated)
         assertTrue(repository.optimizationProgress.value.result is OptimizationResult.Canceled)
         assertEquals(0, repository.optimizationProgress.value.failedOrRefusedCount)
         coVerify(exactly = 0) {
@@ -637,6 +775,12 @@ class AdbRepositoryImplTest {
             bucket = standbyBucket,
             rawValue = standbyBucket.name.lowercase()
         )
+    )
+
+    private fun allowedStorageSnapshot() = StorageSnapshot(
+        totalBytes = 256L * 1024L * 1024L * 1024L,
+        availableBytes = 64L * 1024L * 1024L * 1024L,
+        capturedAtMs = 1L
     )
 
     private companion object {
