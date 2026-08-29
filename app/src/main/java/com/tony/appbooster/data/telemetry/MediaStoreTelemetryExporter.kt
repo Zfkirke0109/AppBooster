@@ -11,6 +11,7 @@ import androidx.annotation.RequiresApi
 import com.tony.appbooster.BuildConfig
 import com.tony.appbooster.di.AdbIoDispatcher
 import com.tony.appbooster.domain.model.telemetry.OptimizationRunTelemetry
+import com.tony.appbooster.domain.model.telemetry.OptimizationStepOutcome
 import com.tony.appbooster.domain.model.telemetry.OptimizationStepTelemetry
 import com.tony.appbooster.domain.model.telemetry.StorageSnapshot
 import com.tony.appbooster.domain.model.telemetry.TelemetryExportResult
@@ -138,6 +139,7 @@ class MediaStoreTelemetryExporter @Inject constructor(
         steps: List<OptimizationStepTelemetry>,
         exportedAtMs: Long
     ) {
+        val totals = OptimizationTelemetrySummary.from(run, steps)
         JsonWriter(OutputStreamWriter(output, Charsets.UTF_8)).use { writer ->
             writer.setIndent("  ")
             writer.beginObject()
@@ -170,12 +172,23 @@ class MediaStoreTelemetryExporter @Inject constructor(
             writer.name("startedAtUtc").value(Instant.ofEpochMilli(run.startedAtMs).toString())
             writer.name("finishedAtUtc").nullableInstant(run.finishedAtMs)
             writer.name("totalTargetedCount").value(run.totalTargetedCount.toLong())
+            writer.name("finalTotals").beginObject()
+            writer.name("targeted").value(totals.targeted.toLong())
+            writer.name("attempted").value(totals.attempted.toLong())
+            writer.name("success").value(totals.success.toLong())
+            writer.name("skipped").value(totals.skipped.toLong())
+            writer.name("failed").value(totals.failed.toLong())
+            writer.name("unverified").value(totals.unverified.toLong())
+            writer.name("canceled").value(totals.canceled.toLong())
+            writer.name("accounted").value(totals.accounted.toLong())
+            writer.name("reconciled").value(totals.reconciled)
+            writer.endObject()
             writer.name("processedCount").value(run.processedCount.toLong())
             writer.name("optimizedSucceededCount").value(run.optimizedSucceededCount.toLong())
             writer.name("alreadyOptimizedCount").value(run.alreadyOptimizedCount.toLong())
             writer.name("skippedNoProfileCount").value(run.skippedNoProfileCount.toLong())
             writer.name("failedOrRefusedCount").value(run.failedOrRefusedCount.toLong())
-            writer.name("unverifiedCount").value(run.unverifiedCount.toLong())
+            writer.name("unverifiedCount").value(totals.unverified.toLong())
             writer.name("osAdjustedFilterCount").value(run.osAdjustedFilterCount.toLong())
             writer.name("skippedNotApplicableCount").value(run.skippedNotApplicableCount.toLong())
             writer.name("verificationUnavailableCount").value(run.verificationUnavailableCount.toLong())
@@ -205,6 +218,11 @@ class MediaStoreTelemetryExporter @Inject constructor(
         name("forceOptimize").value(step.forceOptimize)
         name("status").value(step.status)
         name("outcome").nullableValue(step.outcome?.name)
+        name("resultClass").nullableValue(step.outcome?.exportResultClass())
+        name("attempted").value(!step.displayCommand.isNullOrBlank())
+        name("verifiedRequestedFilter").value(
+            step.outcome == OptimizationStepOutcome.VERIFIED_REQUESTED_FILTER
+        )
         name("requestedFilter").nullableValue(step.requestedFilter)
         name("displayCommand").nullableValue(step.displayCommand)
         name("beforeFilter").nullableValue(step.beforeFilter)
@@ -255,7 +273,7 @@ class MediaStoreTelemetryExporter @Inject constructor(
     }
 
     companion object {
-        const val JSON_SCHEMA_VERSION = 2L
+        const val JSON_SCHEMA_VERSION = 3L
         const val RETAINED_RUN_COUNT = 20
         private const val JSON_MIME_TYPE = "application/json"
         private const val EXPORT_DIRECTORY = "Galaxy OptiDroid/Telemetry"

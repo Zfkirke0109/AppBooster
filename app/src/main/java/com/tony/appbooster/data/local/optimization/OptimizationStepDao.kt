@@ -37,7 +37,7 @@ interface OptimizationStepDao {
           AND android_build = :androidBuild
           AND art_module_version = :artModuleVersion
           AND stableOsAdjusted = 1
-          AND outcome IN ('OS_ADJUSTED_FILTER', 'SKIPPED_NOT_APPLICABLE')
+          AND outcome = 'OS_ADJUSTED_FILTER'
           AND (
               packageLastUpdateTimeMs = :packageLastUpdateTimeMs OR
               (packageLastUpdateTimeMs IS NULL AND :packageLastUpdateTimeMs IS NULL)

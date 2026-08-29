@@ -258,7 +258,7 @@
     <string name="telemetry_no_runs">Non è ancora disponibile alcuna telemetria di ottimizzazione.</string>
     <string name="telemetry_latest_run">Ultima esecuzione n. %1$d</string>
     <string name="telemetry_status">Stato: %1$s</string>
-    <string name="telemetry_counts">%1$d verificate · %2$d corrispondenti · %3$d non riuscite · %4$d non verificate</string>
+    <string name="telemetry_counts">%1$d riuscite · %2$d saltate · %3$d non riuscite · %4$d non verificate</string>
     <string name="telemetry_storage">Spazio libero: %1$s → %2$s</string>
     <string name="telemetry_exported">Esportata automaticamente in %1$s</string>
     <string name="telemetry_export_error">Esportazione non riuscita: %1$s</string>

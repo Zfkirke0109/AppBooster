@@ -7,6 +7,7 @@ import com.tony.appbooster.domain.model.common.OptimizationProgress
 import com.tony.appbooster.domain.model.settings.AppOptimizationType
 import com.tony.appbooster.domain.model.telemetry.OptimizationRunStatus
 import com.tony.appbooster.domain.model.telemetry.OptimizationRunTelemetry
+import com.tony.appbooster.domain.model.telemetry.OptimizationStepOutcome
 import com.tony.appbooster.domain.model.telemetry.OptimizationStepTelemetry
 import com.tony.appbooster.domain.model.telemetry.StorageSnapshot
 import com.tony.appbooster.domain.model.telemetry.TelemetryExportResult
@@ -38,10 +39,18 @@ class MediaStoreTelemetryExporterTest {
             val json = context.contentResolver.openInputStream(uri)?.use { input ->
                 BufferedReader(InputStreamReader(input)).readText()
             }.orEmpty()
-            assertTrue(json.contains("\"schemaVersion\": 2"))
+            assertTrue(json.contains("\"schemaVersion\": 3"))
             assertTrue(json.contains("\"applicationId\": \"com.zfkirke0109.galaxyoptidroid\""))
             assertTrue(json.contains("\"threadPolicy\": \"package-manager-managed\""))
+            assertTrue(json.contains("\"attempted\": 1"))
+            assertTrue(json.contains("\"success\": 1"))
+            assertTrue(json.contains("\"skipped\": 0"))
+            assertTrue(json.contains("\"failed\": 0"))
+            assertTrue(json.contains("\"unverified\": 0"))
+            assertTrue(json.contains("\"reconciled\": true"))
             assertTrue(json.contains("\"packageName\": \"com.example.telemetry\""))
+            assertTrue(json.contains("\"resultClass\": \"SUCCESS\""))
+            assertTrue(json.contains("\"verifiedRequestedFilter\": true"))
             assertTrue(json.contains("\"stdoutTruncated\": true"))
             assertTrue(json.contains("Device-volume free-space observation"))
         } finally {
@@ -80,7 +89,7 @@ class MediaStoreTelemetryExporterTest {
         modeKey = AppOptimizationType.SPEED_PROFILE.value,
         forceOptimize = false,
         status = "SUCCEEDED",
-        outcome = null,
+        outcome = OptimizationStepOutcome.VERIFIED_REQUESTED_FILTER,
         requestedFilter = "speed-profile",
         beforeFilter = "verify",
         afterFilter = "speed-profile",

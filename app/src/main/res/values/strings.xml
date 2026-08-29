@@ -306,7 +306,7 @@
     <string name="telemetry_no_runs">No optimization telemetry is available yet.</string>
     <string name="telemetry_latest_run">Latest run #%1$d</string>
     <string name="telemetry_status">Status: %1$s</string>
-    <string name="telemetry_counts">%1$d verified · %2$d matching · %3$d failed · %4$d unverified</string>
+    <string name="telemetry_counts">%1$d success · %2$d skipped · %3$d failed · %4$d unverified</string>
     <string name="telemetry_storage">Free storage: %1$s → %2$s</string>
     <string name="telemetry_exported">Exported automatically to %1$s</string>
     <string name="telemetry_export_error">Export failed: %1$s</string>
