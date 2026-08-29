@@ -155,6 +155,8 @@ class MediaStoreTelemetryExporter @Inject constructor(
             writer.name("model").value(run.deviceModel)
             writer.name("sdkInt").value(run.sdkInt.toLong())
             writer.name("buildFingerprint").value(run.buildFingerprint)
+            writer.name("androidBuild").value(run.androidBuild)
+            writer.name("artModuleVersion").value(run.artModuleVersion)
             writer.endObject()
 
             writer.name("run").beginObject()
@@ -174,7 +176,11 @@ class MediaStoreTelemetryExporter @Inject constructor(
             writer.name("skippedNoProfileCount").value(run.skippedNoProfileCount.toLong())
             writer.name("failedOrRefusedCount").value(run.failedOrRefusedCount.toLong())
             writer.name("unverifiedCount").value(run.unverifiedCount.toLong())
+            writer.name("osAdjustedFilterCount").value(run.osAdjustedFilterCount.toLong())
+            writer.name("skippedNotApplicableCount").value(run.skippedNotApplicableCount.toLong())
+            writer.name("verificationUnavailableCount").value(run.verificationUnavailableCount.toLong())
             writer.name("canceledCount").value(run.canceledCount.toLong())
+            writer.name("artStorageDeltaBytes").value(run.artStorageDeltaBytes)
             writer.name("threadPolicy").value(run.threadPolicy)
             writer.name("storageBefore").storageSnapshot(run.storageBefore)
             writer.name("storageAfter").nullableStorageSnapshot(run.storageAfter)
@@ -198,9 +204,19 @@ class MediaStoreTelemetryExporter @Inject constructor(
         name("modeKey").value(step.modeKey)
         name("forceOptimize").value(step.forceOptimize)
         name("status").value(step.status)
+        name("outcome").nullableValue(step.outcome?.name)
+        name("requestedFilter").nullableValue(step.requestedFilter)
         name("displayCommand").nullableValue(step.displayCommand)
         name("beforeFilter").nullableValue(step.beforeFilter)
         name("afterFilter").nullableValue(step.afterFilter)
+        name("artStatus").nullableValue(step.artStatus)
+        name("artFinalStatus").nullableValue(step.artFinalStatus)
+        name("artSizeBytes").nullableLong(step.artSizeBytes)
+        name("artSizeBeforeBytes").nullableLong(step.artSizeBeforeBytes)
+        name("androidBuild").nullableValue(step.androidBuild)
+        name("artModuleVersion").nullableValue(step.artModuleVersion)
+        name("packageLastUpdateTimeMs").nullableLong(step.packageLastUpdateTimeMs)
+        name("stableOsAdjusted").value(step.stableOsAdjusted)
         name("exitCode").nullableLong(step.exitCode?.toLong())
         name("durationMs").nullableLong(step.durationMs)
         name("verificationSource").nullableValue(step.verificationSource)
@@ -239,7 +255,7 @@ class MediaStoreTelemetryExporter @Inject constructor(
     }
 
     companion object {
-        const val JSON_SCHEMA_VERSION = 1L
+        const val JSON_SCHEMA_VERSION = 2L
         const val RETAINED_RUN_COUNT = 20
         private const val JSON_MIME_TYPE = "application/json"
         private const val EXPORT_DIRECTORY = "Galaxy OptiDroid/Telemetry"

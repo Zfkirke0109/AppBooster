@@ -1,5 +1,6 @@
 package com.tony.appbooster.data.repository
 
+import android.os.Build
 import android.os.SystemClock
 import com.tony.appbooster.data.local.optimization.OptimizationStepDao
 import com.tony.appbooster.data.local.optimization.OptimizationStepEntity
@@ -28,6 +29,7 @@ import com.tony.appbooster.domain.model.device.blockingSummary
 import com.tony.appbooster.domain.model.settings.AppOptimizationType
 import com.tony.appbooster.domain.model.settings.OptimizationTargetScope
 import com.tony.appbooster.domain.model.telemetry.OptimizationRunStatus
+import com.tony.appbooster.domain.model.telemetry.OptimizationStepOutcome
 import com.tony.appbooster.domain.model.telemetry.StorageSnapshot
 import com.tony.appbooster.domain.model.telemetry.TelemetryExportResult
 import com.tony.appbooster.domain.repository.AdbConnectionState
@@ -110,6 +112,12 @@ class AdbRepositoryImpl @Inject constructor(
 
     private val optimizationCancelRequested = AtomicBoolean(false)
     private val analysisCancelRequested = AtomicBoolean(false)
+    private val runtimeIdentity = RuntimeIdentity(
+        androidBuild = Build.FINGERPRINT.orEmpty(),
+        artModuleVersion = System.getProperty("java.vm.version")
+            ?.takeIf(String::isNotBlank)
+            ?: "unknown"
+    )
 
     // ─────────────────────────────────────────────────────────────────────────────
     // Connection
@@ -302,6 +310,9 @@ class AdbRepositoryImpl @Inject constructor(
                 optimizedSucceededCount = plan.optimizedCount,
                 failedOrRefusedCount = plan.failedCount,
                 unverifiedCount = plan.unverifiedCount,
+                osAdjustedFilterCount = plan.osAdjustedCount,
+                skippedNotApplicableCount = plan.skippedNotApplicableCount,
+                verificationUnavailableCount = plan.verificationUnavailableCount,
                 progress = if (plan.totalCount > 0) {
                     plan.processedCount.toFloat() / plan.totalCount.toFloat()
                 } else {
@@ -364,7 +375,11 @@ class AdbRepositoryImpl @Inject constructor(
                         status = OptimizationRunStatus.CANCELED,
                         statusMessage = "Canceled before completion"
                     )
-                    return@fold Resource.Success(Unit)
+                    val cancellation = throwable as? CancellationException
+                        ?: CancellationException("Optimization canceled").apply {
+                            initCause(throwable)
+                        }
+                    throw cancellation
                 }
 
                 val paused = throwable as? OptimizationPausedException
@@ -713,9 +728,28 @@ class AdbRepositoryImpl @Inject constructor(
         if (steps.isEmpty()) return null
 
         val skippedCount = steps.firstOrNull()?.skippedCount ?: 0
-        val optimizedCount = steps.count { it.status == OptimizationStepStatus.SUCCEEDED }
-        val failedCount = steps.count { it.status == OptimizationStepStatus.FAILED }
-        val unverifiedCount = steps.count { it.status == OptimizationStepStatus.UNVERIFIED }
+        val optimizedCount = steps.count {
+            outcomeForStep(it) ==
+                OptimizationStepOutcome.VERIFIED_REQUESTED_FILTER
+        }
+        val failedCount = steps.count {
+            outcomeForStep(it) ==
+                OptimizationStepOutcome.FAILED_OR_REFUSED
+        }
+        val osAdjustedCount = steps.count {
+            outcomeForStep(it) ==
+                OptimizationStepOutcome.OS_ADJUSTED_FILTER
+        }
+        val skippedNotApplicableCount = steps.count {
+            outcomeForStep(it) ==
+                OptimizationStepOutcome.SKIPPED_NOT_APPLICABLE
+        }
+        val verificationUnavailableCount = steps.count {
+            outcomeForStep(it) ==
+                OptimizationStepOutcome.VERIFICATION_UNAVAILABLE
+        }
+        val unverifiedCount = osAdjustedCount + skippedNotApplicableCount +
+            verificationUnavailableCount
         val processedCount = optimizedCount + failedCount + unverifiedCount
         val existingTelemetry = telemetryRepository.getRun(runId)
 
@@ -730,6 +764,9 @@ class AdbRepositoryImpl @Inject constructor(
             optimizedCount = optimizedCount,
             failedCount = failedCount,
             unverifiedCount = unverifiedCount,
+            osAdjustedCount = osAdjustedCount,
+            skippedNotApplicableCount = skippedNotApplicableCount,
+            verificationUnavailableCount = verificationUnavailableCount,
             isResumed = true
         )
     }
@@ -763,7 +800,8 @@ class AdbRepositoryImpl @Inject constructor(
             resolvePackagesToOptimize(mode, targetPackages)
         }
         val packagesToOptimize = resolution.packagesToOptimize
-        val skippedCount = resolution.alreadyOptimizedCount + resolution.skippedNoProfileCount
+        val skippedCount = resolution.alreadyOptimizedCount + resolution.skippedNoProfileCount +
+            resolution.osAdjustedCount + resolution.skippedNotApplicableCount
 
         telemetryRepository.updatePlanCounts(
             runId = runId,
@@ -788,6 +826,9 @@ class AdbRepositoryImpl @Inject constructor(
                 packageName = packageName,
                 mode = modeKey,
                 forceOptimize = forceOptimize,
+                requestedFilter = mode.requestedCompileMode,
+                androidBuild = runtimeIdentity.androidBuild,
+                artModuleVersion = runtimeIdentity.artModuleVersion,
                 createdAtMs = now,
                 updatedAtMs = now
             )
@@ -805,6 +846,9 @@ class AdbRepositoryImpl @Inject constructor(
             optimizedCount = 0,
             failedCount = 0,
             unverifiedCount = 0,
+            osAdjustedCount = resolution.osAdjustedCount,
+            skippedNotApplicableCount = resolution.skippedNotApplicableCount,
+            verificationUnavailableCount = 0,
             isResumed = false
         )
     }
@@ -853,7 +897,9 @@ class AdbRepositoryImpl @Inject constructor(
             return PackageResolution(
                 packagesToOptimize = packagesToOptimize,
                 alreadyOptimizedCount = existing.appsAlreadyOptimized,
-                skippedNoProfileCount = existing.appsWithNoProfile
+                skippedNoProfileCount = existing.appsWithNoProfile,
+                osAdjustedCount = existing.osAdjustedFilterCount,
+                skippedNotApplicableCount = existing.skippedNotApplicableCount
             )
         }
 
@@ -865,13 +911,18 @@ class AdbRepositoryImpl @Inject constructor(
         return PackageResolution(
             packagesToOptimize = data.packagesNeedingOptimization,
             alreadyOptimizedCount = data.appsAlreadyOptimized,
-            skippedNoProfileCount = data.appsWithNoProfile
+            skippedNoProfileCount = data.appsWithNoProfile,
+            osAdjustedCount = data.osAdjustedFilterCount,
+            skippedNotApplicableCount = data.skippedNotApplicableCount
         )
     }
 
     /** Handles the case where analysis finds no package that should be compiled. */
     private fun handleNoCompileNeeded(runId: Long, resolution: PackageResolution) {
-        val skippedCount = resolution.alreadyOptimizedCount + resolution.skippedNoProfileCount
+        val skippedCount = resolution.alreadyOptimizedCount + resolution.skippedNoProfileCount +
+            resolution.osAdjustedCount + resolution.skippedNotApplicableCount
+        val hasClassifiedExceptions = resolution.osAdjustedCount > 0 ||
+            resolution.skippedNotApplicableCount > 0
         logger.addLog(
             "No optimization needed: ${resolution.alreadyOptimizedCount} already match, " +
                 "${resolution.skippedNoProfileCount} have no runtime profile."
@@ -884,10 +935,17 @@ class AdbRepositoryImpl @Inject constructor(
         _optimizationProgress.value = OptimizationProgress(
             runId = runId,
             isRunning = false,
-            result = OptimizationResult.Completed,
+            result = if (hasClassifiedExceptions) {
+                OptimizationResult.CompletedWithIssues
+            } else {
+                OptimizationResult.Completed
+            },
             skippedCount = skippedCount,
             alreadyOptimizedCount = resolution.alreadyOptimizedCount,
             skippedNoProfileCount = resolution.skippedNoProfileCount,
+            osAdjustedFilterCount = resolution.osAdjustedCount,
+            skippedNotApplicableCount = resolution.skippedNotApplicableCount,
+            unverifiedCount = resolution.osAdjustedCount + resolution.skippedNotApplicableCount,
             totalCount = skippedCount,
             progress = 1f
         )
@@ -933,11 +991,14 @@ class AdbRepositoryImpl @Inject constructor(
         val failedPackages = mutableListOf<String>()
         var optimizedCount = plan.optimizedCount
         var failedCount = plan.failedCount
-        var unverifiedCount = plan.unverifiedCount
+        var osAdjustedCount = plan.osAdjustedCount
+        var skippedNotApplicableCount = plan.skippedNotApplicableCount
+        var verificationUnavailableCount = plan.verificationUnavailableCount
         var processedCount = plan.processedCount
 
         for (step in plan.steps) {
-            if (step.status == OptimizationStepStatus.SUCCEEDED ||
+            if (step.outcome != null ||
+                step.status == OptimizationStepStatus.SUCCEEDED ||
                 step.status == OptimizationStepStatus.FAILED ||
                 step.status == OptimizationStepStatus.UNVERIFIED
             ) continue
@@ -946,7 +1007,9 @@ class AdbRepositoryImpl @Inject constructor(
                     processedCount = processedCount,
                     optimizedCount = optimizedCount,
                     failedCount = failedCount,
-                    unverifiedCount = unverifiedCount
+                    osAdjustedCount = osAdjustedCount,
+                    skippedNotApplicableCount = skippedNotApplicableCount,
+                    verificationUnavailableCount = verificationUnavailableCount
                 )
             }
 
@@ -956,9 +1019,68 @@ class AdbRepositoryImpl @Inject constructor(
             )
             logger.addLogEntry(LogEntryType.OPTIMIZING, messageKey = LogMessageKey.OPTIMIZING_APP, packageName = packageName)
 
-            val beforeFilter = compilationResolver
-                .queryPackageCompilationInfo(packageName, compileMode)
-                .compilerFilter
+            val beforeInfo = compilationResolver.queryPackageCompilationInfo(packageName, compileMode)
+            val beforeFilter = beforeInfo.compilerFilter
+
+            val packageDump = try {
+                shellDataSource
+                    .executeCommandDetailed(ShellCommandSpec.PackageDump(packageName))
+                    .getOrNull()
+                    ?.takeIf { it.isSuccess }
+                    ?.stdout
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                // HAS_CODE is an opportunistic preflight. An unavailable dump
+                // must not prevent the bounded compile command from running.
+                null
+            }
+            if (packageDump != null && DexoptStatusParser.parsePackageHasCode(packageDump) == false) {
+                val reason = "Package contains no executable DEX code; compile not applicable."
+                val now = System.currentTimeMillis()
+                optimizationStepDao.markClassifiedResult(
+                    id = step.id,
+                    status = OptimizationStepStatus.SKIPPED_NOT_APPLICABLE,
+                    afterFilter = beforeFilter,
+                    exitCode = 0,
+                    stdout = packageDump,
+                    stderr = reason,
+                    updatedAtMs = now
+                )
+                recordOutcome(
+                    step = step,
+                    outcome = OptimizationStepOutcome.SKIPPED_NOT_APPLICABLE,
+                    art = DexoptStatusParser.ArtCompileResult(
+                        actualCompilerFilter = beforeFilter,
+                        status = "SKIPPED",
+                        finalStatus = "SKIPPED",
+                        sizeBytes = null,
+                        sizeBeforeBytes = null
+                    ),
+                    packageLastUpdateTimeMs = beforeInfo.lastUpdateTimeMs,
+                    stableOsAdjusted = true,
+                    updatedAtMs = now
+                )
+                logger.addLog("Not applicable: $packageName - no executable DEX code")
+                logger.addLogEntry(
+                    LogEntryType.INFO,
+                    "Package not applicable",
+                    packageName = packageName,
+                    detail = reason
+                )
+                skippedNotApplicableCount++
+                processedCount++
+                updateCompileProgress(
+                    plan,
+                    processedCount,
+                    optimizedCount,
+                    failedCount,
+                    osAdjustedCount,
+                    skippedNotApplicableCount,
+                    verificationUnavailableCount
+                )
+                continue
+            }
 
             val command = ShellCommandSpec.PackageCompile(
                 packageName = packageName,
@@ -992,6 +1114,14 @@ class AdbRepositoryImpl @Inject constructor(
                 // handler records the Canceled outcome.
                 if (throwable is CancellationException) throw throwable
                 recordStepFailure(step.id, packageName, throwable)
+                recordOutcome(
+                    step = step,
+                    outcome = OptimizationStepOutcome.FAILED_OR_REFUSED,
+                    art = DexoptStatusParser.ArtCompileResult(null, null, null, null, null),
+                    packageLastUpdateTimeMs = beforeInfo.lastUpdateTimeMs,
+                    stableOsAdjusted = false,
+                    updatedAtMs = System.currentTimeMillis()
+                )
                 telemetryRepository.recordStepFinished(
                     stepId = step.id,
                     durationMs = commandDurationMs,
@@ -1001,42 +1131,110 @@ class AdbRepositoryImpl @Inject constructor(
                 failedPackages += packageName
                 failedCount++
                 processedCount++
-                updateCompileProgress(plan, processedCount, optimizedCount, failedCount, unverifiedCount)
+                updateCompileProgress(
+                    plan,
+                    processedCount,
+                    optimizedCount,
+                    failedCount,
+                    osAdjustedCount,
+                    skippedNotApplicableCount,
+                    verificationUnavailableCount
+                )
                 continue
             }
             val commandResult = commandAttempt.getOrThrow()
 
             val verification = verifyPackageCompile(packageName, mode, commandResult)
-            if (verification.verified) {
-                logger.addLog("Verified: optimized $packageName (${verification.filter ?: compileMode})")
-                logger.addLogEntry(LogEntryType.SUCCESS, messageKey = LogMessageKey.OPTIMIZED, packageName = packageName,
-                    detail = verification.filter)
-                optimizationStepDao.markSucceeded(
-                    id = step.id,
-                    afterFilter = verification.filter,
-                    exitCode = commandResult.exitCode,
-                    stdout = commandResult.stdout,
-                    stderr = commandResult.stderr,
-                    updatedAtMs = System.currentTimeMillis()
+            val resultRecordedAtMs = System.currentTimeMillis()
+            when (verification.outcome) {
+                OptimizationStepOutcome.VERIFIED_REQUESTED_FILTER -> {
+                    logger.addLog("Verified: optimized $packageName (${verification.filter ?: compileMode})")
+                    logger.addLogEntry(
+                        LogEntryType.SUCCESS,
+                        messageKey = LogMessageKey.OPTIMIZED,
+                        packageName = packageName,
+                        detail = verification.filter
+                    )
+                    optimizationStepDao.markSucceeded(
+                        id = step.id,
+                        afterFilter = verification.filter,
+                        exitCode = commandResult.exitCode,
+                        stdout = commandResult.stdout,
+                        stderr = commandResult.stderr,
+                        updatedAtMs = resultRecordedAtMs
+                    )
+                    compilationResolver.markOptimized(packageName)
+                    optimizedCount++
+                }
+                OptimizationStepOutcome.OS_ADJUSTED_FILTER -> {
+                    optimizationStepDao.markClassifiedResult(
+                        id = step.id,
+                        status = OptimizationStepStatus.OS_ADJUSTED,
+                        afterFilter = verification.filter,
+                        exitCode = commandResult.exitCode,
+                        stdout = commandResult.stdout,
+                        stderr = commandResult.stderr.ifBlank { verification.reason },
+                        updatedAtMs = resultRecordedAtMs
+                    )
+                    logger.addLog("Android adjusted: $packageName - ${verification.reason}")
+                    logger.addLogEntry(
+                        LogEntryType.INFO,
+                        "Android adjusted compiler filter",
+                        packageName = packageName,
+                        detail = verification.reason
+                    )
+                    osAdjustedCount++
+                }
+                OptimizationStepOutcome.SKIPPED_NOT_APPLICABLE -> {
+                    optimizationStepDao.markClassifiedResult(
+                        id = step.id,
+                        status = OptimizationStepStatus.SKIPPED_NOT_APPLICABLE,
+                        afterFilter = verification.filter,
+                        exitCode = commandResult.exitCode,
+                        stdout = commandResult.stdout,
+                        stderr = commandResult.stderr.ifBlank { verification.reason },
+                        updatedAtMs = resultRecordedAtMs
+                    )
+                    logger.addLog("Not applicable: $packageName - ${verification.reason}")
+                    logger.addLogEntry(
+                        LogEntryType.INFO,
+                        "Package not applicable",
+                        packageName = packageName,
+                        detail = verification.reason
+                    )
+                    skippedNotApplicableCount++
+                }
+                OptimizationStepOutcome.VERIFICATION_UNAVAILABLE -> {
+                    optimizationStepDao.markClassifiedResult(
+                        id = step.id,
+                        status = OptimizationStepStatus.VERIFICATION_UNAVAILABLE,
+                        afterFilter = verification.filter,
+                        exitCode = commandResult.exitCode,
+                        stdout = commandResult.stdout,
+                        stderr = commandResult.stderr.ifBlank { verification.reason },
+                        updatedAtMs = resultRecordedAtMs
+                    )
+                    logger.addLog("Verification unavailable: $packageName - ${verification.reason}")
+                    logger.addLogEntry(
+                        LogEntryType.ERROR,
+                        "Verification unavailable",
+                        packageName = packageName,
+                        detail = verification.reason
+                    )
+                    verificationUnavailableCount++
+                }
+                OptimizationStepOutcome.FAILED_OR_REFUSED -> error(
+                    "Nonzero compile results must be handled before ART verification"
                 )
-                compilationResolver.markOptimized(packageName)
-                optimizedCount++
-            } else {
-                val reason = verification.reason
-                logger.addLog("Unverified: $packageName - $reason")
-                logger.addLogEntry(LogEntryType.ERROR, "Unverified package",
-                    packageName = packageName,
-                    detail = reason)
-                optimizationStepDao.markUnverified(
-                    id = step.id,
-                    afterFilter = verification.filter,
-                    exitCode = commandResult.exitCode,
-                    stdout = commandResult.stdout,
-                    stderr = commandResult.stderr.ifBlank { reason },
-                    updatedAtMs = System.currentTimeMillis()
-                )
-                unverifiedCount++
             }
+            recordOutcome(
+                step = step,
+                outcome = verification.outcome,
+                art = verification.art,
+                packageLastUpdateTimeMs = beforeInfo.lastUpdateTimeMs,
+                stableOsAdjusted = verification.stableOsAdjusted,
+                updatedAtMs = resultRecordedAtMs
+            )
             telemetryRepository.recordStepFinished(
                 stepId = step.id,
                 durationMs = commandDurationMs,
@@ -1049,14 +1247,24 @@ class AdbRepositoryImpl @Inject constructor(
             }
 
             processedCount++
-            updateCompileProgress(plan, processedCount, optimizedCount, failedCount, unverifiedCount)
+            updateCompileProgress(
+                plan,
+                processedCount,
+                optimizedCount,
+                failedCount,
+                osAdjustedCount,
+                skippedNotApplicableCount,
+                verificationUnavailableCount
+            )
 
             if (checkCancelled(plan.runId, processedCount)) {
                 return CompileRunSummary(
                     processedCount = processedCount,
                     optimizedCount = optimizedCount,
                     failedCount = failedCount,
-                    unverifiedCount = unverifiedCount
+                    osAdjustedCount = osAdjustedCount,
+                    skippedNotApplicableCount = skippedNotApplicableCount,
+                    verificationUnavailableCount = verificationUnavailableCount
                 )
             }
         }
@@ -1075,7 +1283,9 @@ class AdbRepositoryImpl @Inject constructor(
             processedCount = processedCount,
             optimizedCount = optimizedCount,
             failedCount = failedCount,
-            unverifiedCount = unverifiedCount
+            osAdjustedCount = osAdjustedCount,
+            skippedNotApplicableCount = skippedNotApplicableCount,
+            verificationUnavailableCount = verificationUnavailableCount
         )
     }
 
@@ -1084,13 +1294,20 @@ class AdbRepositoryImpl @Inject constructor(
         processedCount: Int,
         optimizedCount: Int,
         failedCount: Int,
-        unverifiedCount: Int
+        osAdjustedCount: Int,
+        skippedNotApplicableCount: Int,
+        verificationUnavailableCount: Int
     ) {
+        val unverifiedCount = osAdjustedCount + skippedNotApplicableCount +
+            verificationUnavailableCount
         _optimizationProgress.value = _optimizationProgress.value.copy(
             processedCount = processedCount,
             optimizedSucceededCount = optimizedCount,
             failedOrRefusedCount = failedCount,
             unverifiedCount = unverifiedCount,
+            osAdjustedFilterCount = osAdjustedCount,
+            skippedNotApplicableCount = skippedNotApplicableCount,
+            verificationUnavailableCount = verificationUnavailableCount,
             progress = processedCount.toFloat() / plan.totalCount.toFloat()
         )
         telemetryRepository.updateProgress(plan.runId, _optimizationProgress.value)
@@ -1101,9 +1318,10 @@ class AdbRepositoryImpl @Inject constructor(
         mode: AppOptimizationType,
         commandResult: com.tony.appbooster.domain.model.common.ShellCommandResult
     ): PackageCompileVerification {
-        val verboseFilter = DexoptStatusParser.parseCompilerFilterFromOutput(
-            "${commandResult.stdout}\n${commandResult.stderr}"
-        )
+        val combinedOutput = "${commandResult.stdout}\n${commandResult.stderr}"
+        val parsedArt = DexoptStatusParser.parseArtCompileResult(combinedOutput)
+        val verboseFilter = parsedArt.actualCompilerFilter
+            ?: DexoptStatusParser.parseCompilerFilterFromOutput(combinedOutput)
 
         val dumpFilter = runCatching {
             shellDataSource.executeCommandDetailed(ShellCommandSpec.PackageDump(packageName))
@@ -1124,7 +1342,16 @@ class AdbRepositoryImpl @Inject constructor(
         }
 
         val actualFilter = dumpFilter ?: verboseFilter ?: resolverFilter
-        val verified = actualFilter != null && isAcceptedCompileFilter(actualFilter, mode)
+        val skipped = parsedArt.finalStatus == "SKIPPED" || parsedArt.status == "SKIPPED"
+        val outcome = when {
+            skipped -> OptimizationStepOutcome.SKIPPED_NOT_APPLICABLE
+            actualFilter == null -> OptimizationStepOutcome.VERIFICATION_UNAVAILABLE
+            DexoptStatusParser.isRequestedFilterSatisfied(
+                mode.requestedCompileMode,
+                actualFilter
+            ) -> OptimizationStepOutcome.VERIFIED_REQUESTED_FILTER
+            else -> OptimizationStepOutcome.OS_ADJUSTED_FILTER
+        }
         val source = when {
             dumpFilter != null -> VERIFICATION_SOURCE_PACKAGE_DUMP
             verboseFilter != null -> VERIFICATION_SOURCE_VERBOSE_OUTPUT
@@ -1133,33 +1360,64 @@ class AdbRepositoryImpl @Inject constructor(
         }
 
         return PackageCompileVerification(
-            verified = verified,
+            outcome = outcome,
             filter = actualFilter,
             source = source,
+            art = parsedArt.copy(actualCompilerFilter = actualFilter),
+            stableOsAdjusted = outcome == OptimizationStepOutcome.OS_ADJUSTED_FILTER ||
+                outcome == OptimizationStepOutcome.SKIPPED_NOT_APPLICABLE,
             reason = when {
-                verified -> null
-                actualFilter == null -> "Post-run ART state was unclear."
-                else -> "Expected ${mode.requestedCompileMode}, but ART reported $actualFilter."
-            } ?: "Verified"
+                outcome == OptimizationStepOutcome.VERIFIED_REQUESTED_FILTER -> "Verified"
+                outcome == OptimizationStepOutcome.SKIPPED_NOT_APPLICABLE ->
+                    "ART skipped this package as not applicable."
+                outcome == OptimizationStepOutcome.VERIFICATION_UNAVAILABLE ->
+                    "Post-run ART state was unavailable."
+                else -> "Requested ${mode.requestedCompileMode}; Android retained $actualFilter. " +
+                    "The compile command completed without failure."
+            }
         )
     }
 
-    private fun isAcceptedCompileFilter(
-        actualFilter: String,
-        mode: AppOptimizationType
-    ): Boolean {
-        val actual = actualFilter.lowercase()
-        return when (mode) {
-            AppOptimizationType.SPEED_PROFILE ->
-                actual in setOf("speed-profile", "speed", "everything")
-            // All three speed-based modes compile with `speed`; ART may still
-            // report `everything` on historical builds that used that filter.
-            AppOptimizationType.FULL_DEX2OAT_SPEED,
-            AppOptimizationType.HEAVY_APPS_SPEED,
-            AppOptimizationType.ADVANCED_FULL_COMPILE ->
-                actual in setOf("speed", "everything")
-        }
+    private suspend fun recordOutcome(
+        step: OptimizationStepEntity,
+        outcome: OptimizationStepOutcome,
+        art: DexoptStatusParser.ArtCompileResult,
+        packageLastUpdateTimeMs: Long?,
+        stableOsAdjusted: Boolean,
+        updatedAtMs: Long
+    ) {
+        optimizationStepDao.recordOutcome(
+            id = step.id,
+            outcome = outcome.name,
+            requestedFilter = step.requestedFilter ?: when (step.mode) {
+                AppOptimizationType.SPEED_PROFILE.value -> "speed-profile"
+                else -> "speed"
+            },
+            artStatus = art.status,
+            artFinalStatus = art.finalStatus,
+            artSizeBytes = art.sizeBytes,
+            artSizeBeforeBytes = art.sizeBeforeBytes,
+            androidBuild = runtimeIdentity.androidBuild,
+            artModuleVersion = runtimeIdentity.artModuleVersion,
+            packageLastUpdateTimeMs = packageLastUpdateTimeMs,
+            stableOsAdjusted = stableOsAdjusted,
+            updatedAtMs = updatedAtMs
+        )
     }
+
+    /** Reads the v3 outcome, with a defensive mapping for interrupted v2-era rows. */
+    private fun outcomeForStep(step: OptimizationStepEntity): OptimizationStepOutcome? =
+        OptimizationStepOutcome.fromStoredValue(step.outcome) ?: when (step.status) {
+            OptimizationStepStatus.SUCCEEDED -> OptimizationStepOutcome.VERIFIED_REQUESTED_FILTER
+            OptimizationStepStatus.FAILED -> OptimizationStepOutcome.FAILED_OR_REFUSED
+            OptimizationStepStatus.UNVERIFIED,
+            OptimizationStepStatus.VERIFICATION_UNAVAILABLE ->
+                OptimizationStepOutcome.VERIFICATION_UNAVAILABLE
+            OptimizationStepStatus.OS_ADJUSTED -> OptimizationStepOutcome.OS_ADJUSTED_FILTER
+            OptimizationStepStatus.SKIPPED_NOT_APPLICABLE ->
+                OptimizationStepOutcome.SKIPPED_NOT_APPLICABLE
+            else -> null
+        }
 
     private suspend fun recordStepFailure(
         stepId: Long,
@@ -1213,13 +1471,22 @@ class AdbRepositoryImpl @Inject constructor(
         skippedNoProfileCount: Int,
         mode: AppOptimizationType
     ) {
-        val hasIssues = summary.failedCount > 0 || summary.unverifiedCount > 0
+        val unverifiedCount = summary.osAdjustedCount + summary.skippedNotApplicableCount +
+            summary.verificationUnavailableCount
+        val hasIssues = summary.failedCount > 0 || summary.osAdjustedCount > 0 ||
+            summary.skippedNotApplicableCount > 0 || summary.verificationUnavailableCount > 0
         val completionDetail = buildString {
             append("${summary.optimizedCount} verified optimized")
             if (alreadyOptimizedCount > 0) append(", $alreadyOptimizedCount already matching")
             if (skippedNoProfileCount > 0) append(", $skippedNoProfileCount no profile")
             if (summary.failedCount > 0) append(", ${summary.failedCount} failed/refused")
-            if (summary.unverifiedCount > 0) append(", ${summary.unverifiedCount} unverified")
+            if (summary.osAdjustedCount > 0) append(", ${summary.osAdjustedCount} Android-adjusted")
+            if (summary.skippedNotApplicableCount > 0) {
+                append(", ${summary.skippedNotApplicableCount} not applicable")
+            }
+            if (summary.verificationUnavailableCount > 0) {
+                append(", ${summary.verificationUnavailableCount} verification unavailable")
+            }
         }
         logger.addLog(
             if (hasIssues) {
@@ -1237,7 +1504,10 @@ class AdbRepositoryImpl @Inject constructor(
             appsAlreadyOptimized = summary.optimizedCount + alreadyOptimizedCount,
             appsWithNoProfile = skippedNoProfileCount,
             failedOrRefusedCount = summary.failedCount,
-            unverifiedCount = summary.unverifiedCount,
+            unverifiedCount = unverifiedCount,
+            osAdjustedFilterCount = summary.osAdjustedCount,
+            skippedNotApplicableCount = summary.skippedNotApplicableCount,
+            verificationUnavailableCount = summary.verificationUnavailableCount,
             isScanning = false,
             lastScanTimeMs = System.currentTimeMillis(),
             mode = mode
@@ -1250,7 +1520,10 @@ class AdbRepositoryImpl @Inject constructor(
             progress = 1f,
             optimizedSucceededCount = summary.optimizedCount,
             failedOrRefusedCount = summary.failedCount,
-            unverifiedCount = summary.unverifiedCount
+            unverifiedCount = unverifiedCount,
+            osAdjustedFilterCount = summary.osAdjustedCount,
+            skippedNotApplicableCount = summary.skippedNotApplicableCount,
+            verificationUnavailableCount = summary.verificationUnavailableCount
         )
     }
 
@@ -1280,6 +1553,8 @@ class AdbRepositoryImpl @Inject constructor(
         var needsOptimization = 0
         var alreadyOptimized = 0
         var noProfile = 0
+        var osAdjusted = 0
+        var skippedNotApplicable = 0
         val totalApps = packages.size
         val packagesNeedingList = mutableListOf<String>()
 
@@ -1300,8 +1575,27 @@ class AdbRepositoryImpl @Inject constructor(
             )
 
             val info = compilationResolver.queryPackageCompilationInfo(packageName, compileMode)
+            val cachedAdjusted = optimizationStepDao.findStableAdjustedOutcome(
+                packageName = packageName,
+                requestedFilter = compileMode,
+                androidBuild = runtimeIdentity.androidBuild,
+                artModuleVersion = runtimeIdentity.artModuleVersion,
+                packageLastUpdateTimeMs = info.lastUpdateTimeMs
+            )
 
-            if (info.needsOptimization) {
+            if (cachedAdjusted != null) {
+                when (OptimizationStepOutcome.fromStoredValue(cachedAdjusted.outcome)) {
+                    OptimizationStepOutcome.OS_ADJUSTED_FILTER -> osAdjusted++
+                    OptimizationStepOutcome.SKIPPED_NOT_APPLICABLE -> skippedNotApplicable++
+                    else -> Unit
+                }
+                logger.addLogEntry(
+                    LogEntryType.INFO,
+                    "Stable Android outcome",
+                    packageName = packageName,
+                    detail = cachedAdjusted.outcome
+                )
+            } else if (info.needsOptimization) {
                 needsOptimization++
                 packagesNeedingList.add(packageName)
                 logger.addLogEntry(LogEntryType.INFO, messageKey = LogMessageKey.NEEDS_OPTIMIZATION,
@@ -1321,7 +1615,9 @@ class AdbRepositoryImpl @Inject constructor(
                 totalAppsScanned = index + 1,
                 appsNeedingOptimization = needsOptimization,
                 appsAlreadyOptimized = alreadyOptimized,
-                appsWithNoProfile = noProfile
+                appsWithNoProfile = noProfile,
+                osAdjustedFilterCount = osAdjusted,
+                skippedNotApplicableCount = skippedNotApplicable
             )
         }
 
@@ -1331,6 +1627,9 @@ class AdbRepositoryImpl @Inject constructor(
             appsNeedingOptimization = needsOptimization,
             appsAlreadyOptimized = alreadyOptimized,
             appsWithNoProfile = noProfile,
+            osAdjustedFilterCount = osAdjusted,
+            skippedNotApplicableCount = skippedNotApplicable,
+            unverifiedCount = osAdjusted + skippedNotApplicable,
             packagesNeedingOptimization = packagesNeedingList,
             isScanning = false,
             currentPackage = "",
@@ -1376,26 +1675,40 @@ class AdbRepositoryImpl @Inject constructor(
         val optimizedCount: Int,
         val failedCount: Int,
         val unverifiedCount: Int,
+        val osAdjustedCount: Int,
+        val skippedNotApplicableCount: Int,
+        val verificationUnavailableCount: Int,
         val isResumed: Boolean
     )
 
     private data class PackageResolution(
         val packagesToOptimize: List<String>,
         val alreadyOptimizedCount: Int = 0,
-        val skippedNoProfileCount: Int = 0
+        val skippedNoProfileCount: Int = 0,
+        val osAdjustedCount: Int = 0,
+        val skippedNotApplicableCount: Int = 0
     )
 
     private data class CompileRunSummary(
         val processedCount: Int,
         val optimizedCount: Int,
         val failedCount: Int,
-        val unverifiedCount: Int
+        val osAdjustedCount: Int,
+        val skippedNotApplicableCount: Int,
+        val verificationUnavailableCount: Int
     )
 
     private data class PackageCompileVerification(
-        val verified: Boolean,
+        val outcome: OptimizationStepOutcome,
         val filter: String?,
         val source: String,
+        val art: DexoptStatusParser.ArtCompileResult,
+        val stableOsAdjusted: Boolean,
         val reason: String
+    )
+
+    private data class RuntimeIdentity(
+        val androidBuild: String,
+        val artModuleVersion: String
     )
 }

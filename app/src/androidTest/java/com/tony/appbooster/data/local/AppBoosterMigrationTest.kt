@@ -54,7 +54,47 @@ class AppBoosterMigrationTest {
         }
     }
 
+    @Test
+    fun migration2To3BackfillsOutcomesAndAddsRuntimeIdentity() {
+        helper.createDatabase(TEST_DATABASE_V3, 2).apply {
+            execSQL(
+                """
+                INSERT INTO optimization_steps (
+                    id, runId, stepIndex, totalSteps, skippedCount, packageName,
+                    mode, forceOptimize, status, createdAtMs, updatedAtMs
+                ) VALUES (
+                    2, 43, 0, 1, 0, 'com.example.verified',
+                    'SPEED', 1, 'SUCCEEDED', 1000, 2000
+                )
+                """.trimIndent()
+            )
+            close()
+        }
+
+        helper.runMigrationsAndValidate(
+            TEST_DATABASE_V3,
+            3,
+            true,
+            AppBoosterMigrations.MIGRATION_2_3
+        ).apply {
+            query("SELECT outcome, stableOsAdjusted FROM optimization_steps WHERE id = 2").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("VERIFIED_REQUESTED_FILTER", cursor.getString(0))
+                assertEquals(0, cursor.getInt(1))
+            }
+            query("PRAGMA table_info(optimization_runs)").use { cursor ->
+                val names = mutableSetOf<String>()
+                while (cursor.moveToNext()) names += cursor.getString(1)
+                assertTrue("android_build" in names)
+                assertTrue("art_module_version" in names)
+                assertTrue("artStorageDeltaBytes" in names)
+            }
+            close()
+        }
+    }
+
     private companion object {
         const val TEST_DATABASE = "appbooster-migration-test"
+        const val TEST_DATABASE_V3 = "appbooster-migration-v3-test"
     }
 }

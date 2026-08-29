@@ -1,5 +1,6 @@
 package com.tony.appbooster.data.local.optimization
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -29,7 +30,15 @@ data class OptimizationRunEntity(
     val skippedNoProfileCount: Int = 0,
     val failedOrRefusedCount: Int = 0,
     val unverifiedCount: Int = 0,
+    @ColumnInfo(defaultValue = "0")
+    val osAdjustedFilterCount: Int = 0,
+    @ColumnInfo(defaultValue = "0")
+    val skippedNotApplicableCount: Int = 0,
+    @ColumnInfo(defaultValue = "0")
+    val verificationUnavailableCount: Int = 0,
     val canceledCount: Int = 0,
+    @ColumnInfo(defaultValue = "0")
+    val artStorageDeltaBytes: Long = 0L,
     val storageTotalBeforeBytes: Long,
     val storageAvailableBeforeBytes: Long,
     val storageReserveBytes: Long,
@@ -43,6 +52,10 @@ data class OptimizationRunEntity(
     val deviceModel: String,
     val sdkInt: Int,
     val buildFingerprint: String,
+    @ColumnInfo(name = "android_build", defaultValue = "''")
+    val androidBuild: String = buildFingerprint,
+    @ColumnInfo(name = "art_module_version", defaultValue = "'unknown'")
+    val artModuleVersion: String = "unknown",
     val threadPolicy: String,
     val exportUri: String? = null,
     val exportError: String? = null,

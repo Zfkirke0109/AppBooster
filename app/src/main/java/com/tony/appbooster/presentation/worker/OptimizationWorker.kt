@@ -83,17 +83,17 @@ class OptimizationWorker @AssistedInject constructor(
 
             if (isStopped) {
                 withContext(NonCancellable) { repository.cancelOptimization() }
-                return@coroutineScope Result.success()
+                throw CancellationException("Optimization worker was stopped")
             }
 
             when (optimizeAppUseCase(mode, forceOptimize)) {
                 is Resource.Success -> Result.success()
                 is Resource.Error -> Result.failure()
             }
-        } catch (_: CancellationException) {
+        } catch (cancellation: CancellationException) {
             // WorkManager cancellation (e.g., notification stop) lands here.
             withContext(NonCancellable) { repository.cancelOptimization() }
-            Result.success()
+            throw cancellation
         } finally {
             notificationJob.cancel()
         }

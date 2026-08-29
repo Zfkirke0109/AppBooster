@@ -11,6 +11,7 @@ import com.tony.appbooster.domain.model.settings.AppOptimizationType
 import com.tony.appbooster.domain.model.telemetry.OptimizationRunStatus
 import com.tony.appbooster.domain.model.telemetry.OptimizationRunTelemetry
 import com.tony.appbooster.domain.model.telemetry.OptimizationStepTelemetry
+import com.tony.appbooster.domain.model.telemetry.OptimizationStepOutcome
 import com.tony.appbooster.domain.model.telemetry.StorageSnapshot
 import com.tony.appbooster.domain.model.telemetry.TelemetryExportResult
 import com.tony.appbooster.domain.repository.OptimizationTelemetryRepository
@@ -68,6 +69,10 @@ class OptimizationTelemetryRepositoryImpl @Inject constructor(
             deviceModel = Build.MODEL.orEmpty(),
             sdkInt = Build.VERSION.SDK_INT,
             buildFingerprint = Build.FINGERPRINT.orEmpty(),
+            androidBuild = Build.FINGERPRINT.orEmpty(),
+            artModuleVersion = System.getProperty("java.vm.version")
+                ?.takeIf(String::isNotBlank)
+                ?: OptimizationRunTelemetry.UNKNOWN_ART_MODULE_VERSION,
             threadPolicy = OptimizationRunTelemetry.PACKAGE_MANAGER_THREAD_POLICY
         )
         runDao.upsert(run)
@@ -95,7 +100,10 @@ class OptimizationTelemetryRepositoryImpl @Inject constructor(
             alreadyOptimizedCount = progress.alreadyOptimizedCount,
             skippedNoProfileCount = progress.skippedNoProfileCount,
             failedOrRefusedCount = progress.failedOrRefusedCount,
-            unverifiedCount = progress.unverifiedCount
+            unverifiedCount = progress.unverifiedCount,
+            osAdjustedFilterCount = progress.osAdjustedFilterCount,
+            skippedNotApplicableCount = progress.skippedNotApplicableCount,
+            verificationUnavailableCount = progress.verificationUnavailableCount
         )
     }
 
@@ -142,6 +150,11 @@ class OptimizationTelemetryRepositoryImpl @Inject constructor(
         } else {
             0
         }
+        val artStorageDeltaBytes = stepDao.getStepsForRun(runId).sumOf { step ->
+            val after = step.artSizeBytes
+            val before = step.artSizeBeforeBytes
+            if (after != null && before != null) after - before else 0L
+        }
         runDao.finishRun(
             runId = runId,
             status = status.name,
@@ -153,6 +166,10 @@ class OptimizationTelemetryRepositoryImpl @Inject constructor(
             skippedNoProfileCount = progress.skippedNoProfileCount,
             failedOrRefusedCount = progress.failedOrRefusedCount,
             unverifiedCount = progress.unverifiedCount,
+            osAdjustedFilterCount = progress.osAdjustedFilterCount,
+            skippedNotApplicableCount = progress.skippedNotApplicableCount,
+            verificationUnavailableCount = progress.verificationUnavailableCount,
+            artStorageDeltaBytes = artStorageDeltaBytes,
             canceledCount = canceledCount,
             storageTotalAfterBytes = storageAfter.totalBytes,
             storageAvailableAfterBytes = storageAfter.availableBytes,
@@ -195,7 +212,11 @@ private fun OptimizationRunEntity.toDomain(): OptimizationRunTelemetry = Optimiz
     skippedNoProfileCount = skippedNoProfileCount,
     failedOrRefusedCount = failedOrRefusedCount,
     unverifiedCount = unverifiedCount,
+    osAdjustedFilterCount = osAdjustedFilterCount,
+    skippedNotApplicableCount = skippedNotApplicableCount,
+    verificationUnavailableCount = verificationUnavailableCount,
     canceledCount = canceledCount,
+    artStorageDeltaBytes = artStorageDeltaBytes,
     storageBefore = StorageSnapshot(
         totalBytes = storageTotalBeforeBytes,
         availableBytes = storageAvailableBeforeBytes,
@@ -214,6 +235,8 @@ private fun OptimizationRunEntity.toDomain(): OptimizationRunTelemetry = Optimiz
     deviceModel = deviceModel,
     sdkInt = sdkInt,
     buildFingerprint = buildFingerprint,
+    androidBuild = androidBuild,
+    artModuleVersion = artModuleVersion,
     threadPolicy = threadPolicy,
     exportUri = exportUri,
     exportError = exportError,
@@ -229,8 +252,18 @@ private fun OptimizationStepEntity.toDomain(): OptimizationStepTelemetry = Optim
     modeKey = mode,
     forceOptimize = forceOptimize,
     status = status,
+    outcome = OptimizationStepOutcome.fromStoredValue(outcome),
+    requestedFilter = requestedFilter,
     beforeFilter = beforeFilter,
     afterFilter = afterFilter,
+    artStatus = artStatus,
+    artFinalStatus = artFinalStatus,
+    artSizeBytes = artSizeBytes,
+    artSizeBeforeBytes = artSizeBeforeBytes,
+    androidBuild = androidBuild,
+    artModuleVersion = artModuleVersion,
+    packageLastUpdateTimeMs = packageLastUpdateTimeMs,
+    stableOsAdjusted = stableOsAdjusted,
     exitCode = exitCode,
     stdout = stdout,
     stderr = stderr,

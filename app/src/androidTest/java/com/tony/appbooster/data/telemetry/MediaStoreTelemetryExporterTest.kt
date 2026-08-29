@@ -38,7 +38,7 @@ class MediaStoreTelemetryExporterTest {
             val json = context.contentResolver.openInputStream(uri)?.use { input ->
                 BufferedReader(InputStreamReader(input)).readText()
             }.orEmpty()
-            assertTrue(json.contains("\"schemaVersion\": 1"))
+            assertTrue(json.contains("\"schemaVersion\": 2"))
             assertTrue(json.contains("\"applicationId\": \"com.zfkirke0109.galaxyoptidroid\""))
             assertTrue(json.contains("\"threadPolicy\": \"package-manager-managed\""))
             assertTrue(json.contains("\"packageName\": \"com.example.telemetry\""))
@@ -80,8 +80,18 @@ class MediaStoreTelemetryExporterTest {
         modeKey = AppOptimizationType.SPEED_PROFILE.value,
         forceOptimize = false,
         status = "SUCCEEDED",
+        outcome = null,
+        requestedFilter = "speed-profile",
         beforeFilter = "verify",
         afterFilter = "speed-profile",
+        artStatus = "PERFORMED",
+        artFinalStatus = "PERFORMED",
+        artSizeBytes = 20L,
+        artSizeBeforeBytes = 10L,
+        androidBuild = "instrumented-test",
+        artModuleVersion = "test-art",
+        packageLastUpdateTimeMs = 1L,
+        stableOsAdjusted = false,
         exitCode = 0,
         stdout = "x".repeat(TelemetryTextLimiter.DEFAULT_MAX_BYTES + 1),
         stderr = "",

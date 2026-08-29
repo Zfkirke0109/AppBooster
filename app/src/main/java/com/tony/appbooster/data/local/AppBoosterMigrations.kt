@@ -68,4 +68,63 @@ object AppBoosterMigrations {
             db.execSQL("ALTER TABLE `optimization_steps` ADD COLUMN `verificationSource` TEXT")
         }
     }
+
+    val MIGRATION_2_3 = object : Migration(2, 3) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `optimization_steps` ADD COLUMN `outcome` TEXT")
+            db.execSQL("ALTER TABLE `optimization_steps` ADD COLUMN `requestedFilter` TEXT")
+            db.execSQL("ALTER TABLE `optimization_steps` ADD COLUMN `artStatus` TEXT")
+            db.execSQL("ALTER TABLE `optimization_steps` ADD COLUMN `artFinalStatus` TEXT")
+            db.execSQL("ALTER TABLE `optimization_steps` ADD COLUMN `artSizeBytes` INTEGER")
+            db.execSQL("ALTER TABLE `optimization_steps` ADD COLUMN `artSizeBeforeBytes` INTEGER")
+            db.execSQL("ALTER TABLE `optimization_steps` ADD COLUMN `android_build` TEXT")
+            db.execSQL("ALTER TABLE `optimization_steps` ADD COLUMN `art_module_version` TEXT")
+            db.execSQL("ALTER TABLE `optimization_steps` ADD COLUMN `packageLastUpdateTimeMs` INTEGER")
+            db.execSQL(
+                "ALTER TABLE `optimization_steps` ADD COLUMN `stableOsAdjusted` " +
+                    "INTEGER NOT NULL DEFAULT 0"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS " +
+                    "`index_optimization_steps_packageName_outcome_requestedFilter` " +
+                    "ON `optimization_steps` (`packageName`, `outcome`, `requestedFilter`)"
+            )
+
+            db.execSQL(
+                "ALTER TABLE `optimization_runs` ADD COLUMN `osAdjustedFilterCount` " +
+                    "INTEGER NOT NULL DEFAULT 0"
+            )
+            db.execSQL(
+                "ALTER TABLE `optimization_runs` ADD COLUMN `skippedNotApplicableCount` " +
+                    "INTEGER NOT NULL DEFAULT 0"
+            )
+            db.execSQL(
+                "ALTER TABLE `optimization_runs` ADD COLUMN `verificationUnavailableCount` " +
+                    "INTEGER NOT NULL DEFAULT 0"
+            )
+            db.execSQL(
+                "ALTER TABLE `optimization_runs` ADD COLUMN `artStorageDeltaBytes` " +
+                    "INTEGER NOT NULL DEFAULT 0"
+            )
+            db.execSQL(
+                "ALTER TABLE `optimization_runs` ADD COLUMN `android_build` " +
+                    "TEXT NOT NULL DEFAULT ''"
+            )
+            db.execSQL(
+                "ALTER TABLE `optimization_runs` ADD COLUMN `art_module_version` " +
+                    "TEXT NOT NULL DEFAULT 'unknown'"
+            )
+            db.execSQL(
+                "UPDATE `optimization_runs` SET `android_build` = `buildFingerprint` " +
+                    "WHERE `android_build` = ''"
+            )
+            db.execSQL(
+                "UPDATE `optimization_steps` SET `outcome` = CASE `status` " +
+                    "WHEN 'SUCCEEDED' THEN 'VERIFIED_REQUESTED_FILTER' " +
+                    "WHEN 'FAILED' THEN 'FAILED_OR_REFUSED' " +
+                    "WHEN 'UNVERIFIED' THEN 'VERIFICATION_UNAVAILABLE' " +
+                    "ELSE NULL END"
+            )
+        }
+    }
 }

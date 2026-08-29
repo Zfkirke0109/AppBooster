@@ -51,7 +51,9 @@ fun OptimizationStatsRow(
     optimizedCount: Int,
     noProfileCount: Int = 0,
     failedCount: Int = 0,
-    unverifiedCount: Int = 0,
+    osAdjustedCount: Int = 0,
+    skippedNotApplicableCount: Int = 0,
+    verificationUnavailableCount: Int = 0,
     showNoProfile: Boolean = true
 ) {
     Surface(
@@ -90,11 +92,25 @@ fun OptimizationStatsRow(
                     dotColor = MaterialTheme.colorScheme.error
                 )
             }
-            if (unverifiedCount > 0) {
+            if (osAdjustedCount > 0) {
                 StatRow(
-                    count = unverifiedCount,
-                    label = stringResource(R.string.analysis_card_unverified),
+                    count = osAdjustedCount,
+                    label = stringResource(R.string.analysis_card_os_adjusted),
                     dotColor = MaterialTheme.colorScheme.secondary
+                )
+            }
+            if (skippedNotApplicableCount > 0) {
+                StatRow(
+                    count = skippedNotApplicableCount,
+                    label = stringResource(R.string.analysis_card_not_applicable),
+                    dotColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
+                )
+            }
+            if (verificationUnavailableCount > 0) {
+                StatRow(
+                    count = verificationUnavailableCount,
+                    label = stringResource(R.string.analysis_card_verification_unavailable),
+                    dotColor = MaterialTheme.colorScheme.error
                 )
             }
         }

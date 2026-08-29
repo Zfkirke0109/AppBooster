@@ -26,7 +26,10 @@ object DatabaseModule {
             context,
             AppBoosterDatabase::class.java,
             "appbooster.db"
-        ).addMigrations(AppBoosterMigrations.MIGRATION_1_2)
+        ).addMigrations(
+            AppBoosterMigrations.MIGRATION_1_2,
+            AppBoosterMigrations.MIGRATION_2_3
+        )
             .build()
     }
 

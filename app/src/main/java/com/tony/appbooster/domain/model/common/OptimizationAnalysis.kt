@@ -29,6 +29,9 @@ data class OptimizationAnalysis(
     val appsWithNoProfile: Int = 0,
     val failedOrRefusedCount: Int = 0,
     val unverifiedCount: Int = 0,
+    val osAdjustedFilterCount: Int = 0,
+    val skippedNotApplicableCount: Int = 0,
+    val verificationUnavailableCount: Int = 0,
     val packagesNeedingOptimization: List<String> = emptyList(),
     val isScanning: Boolean = false,
     val currentPackage: String = "",
@@ -50,6 +53,7 @@ data class OptimizationAnalysis(
             appsNeedingOptimization == 0 &&
             failedOrRefusedCount == 0 &&
             unverifiedCount == 0 &&
+            verificationUnavailableCount == 0 &&
             appsAlreadyOptimized > 0
 
     /**

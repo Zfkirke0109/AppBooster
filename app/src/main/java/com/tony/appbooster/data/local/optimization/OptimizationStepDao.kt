@@ -32,6 +32,31 @@ interface OptimizationStepDao {
     @Query(
         """
         SELECT * FROM optimization_steps
+        WHERE packageName = :packageName
+          AND requestedFilter = :requestedFilter
+          AND android_build = :androidBuild
+          AND art_module_version = :artModuleVersion
+          AND stableOsAdjusted = 1
+          AND outcome IN ('OS_ADJUSTED_FILTER', 'SKIPPED_NOT_APPLICABLE')
+          AND (
+              packageLastUpdateTimeMs = :packageLastUpdateTimeMs OR
+              (packageLastUpdateTimeMs IS NULL AND :packageLastUpdateTimeMs IS NULL)
+          )
+        ORDER BY updatedAtMs DESC
+        LIMIT 1
+        """
+    )
+    suspend fun findStableAdjustedOutcome(
+        packageName: String,
+        requestedFilter: String,
+        androidBuild: String,
+        artModuleVersion: String,
+        packageLastUpdateTimeMs: Long?
+    ): OptimizationStepEntity?
+
+    @Query(
+        """
+        SELECT * FROM optimization_steps
         WHERE id IN (
             SELECT MAX(id) FROM optimization_steps
             WHERE status = 'SUCCEEDED'
@@ -124,6 +149,60 @@ interface OptimizationStepDao {
         exitCode: Int,
         stdout: String,
         stderr: String,
+        updatedAtMs: Long
+    )
+
+    @Query(
+        """
+        UPDATE optimization_steps
+        SET status = :status,
+            afterFilter = :afterFilter,
+            exitCode = :exitCode,
+            stdout = :stdout,
+            stderr = :stderr,
+            updatedAtMs = :updatedAtMs
+        WHERE id = :id
+        """
+    )
+    suspend fun markClassifiedResult(
+        id: Long,
+        status: String,
+        afterFilter: String?,
+        exitCode: Int,
+        stdout: String,
+        stderr: String,
+        updatedAtMs: Long
+    )
+
+    @Query(
+        """
+        UPDATE optimization_steps
+        SET outcome = :outcome,
+            requestedFilter = :requestedFilter,
+            artStatus = :artStatus,
+            artFinalStatus = :artFinalStatus,
+            artSizeBytes = :artSizeBytes,
+            artSizeBeforeBytes = :artSizeBeforeBytes,
+            android_build = :androidBuild,
+            art_module_version = :artModuleVersion,
+            packageLastUpdateTimeMs = :packageLastUpdateTimeMs,
+            stableOsAdjusted = :stableOsAdjusted,
+            updatedAtMs = :updatedAtMs
+        WHERE id = :id
+        """
+    )
+    suspend fun recordOutcome(
+        id: Long,
+        outcome: String,
+        requestedFilter: String,
+        artStatus: String?,
+        artFinalStatus: String?,
+        artSizeBytes: Long?,
+        artSizeBeforeBytes: Long?,
+        androidBuild: String,
+        artModuleVersion: String,
+        packageLastUpdateTimeMs: Long?,
+        stableOsAdjusted: Boolean,
         updatedAtMs: Long
     )
 

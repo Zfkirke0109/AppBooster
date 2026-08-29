@@ -41,6 +41,8 @@ internal object ShellServiceOutputPolicy {
                         lower.startsWith("codepath=") -> true
                         lower.startsWith("resourcepath=") -> true
                         lower.startsWith("overlaytarget=") -> true
+                        lower.startsWith("pkgflags=") -> true
+                        lower.startsWith("flags=") -> true
                         else -> false
                     }
                 }

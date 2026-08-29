@@ -79,7 +79,17 @@ class AdbShellClientImpl @Inject constructor(
         val result = shizukuClient.execute(command)
 
         if (!result.isSuccess) {
-            Log.e(TAG, "Command failed with exit code ${result.exitCode}: ${result.error}")
+            val boundedError = result.error
+                .replace(Regex("[\\r\\n\\t]+"), " ")
+                .trim()
+                .take(MAX_LOGGED_ERROR_CHARS)
+                .ifBlank { "<empty>" }
+            Log.e(
+                TAG,
+                "operation=${command.operationName()} exitCode=${result.exitCode} " +
+                    "stderrChars=${result.error.length} stdoutChars=${result.output.length} " +
+                    "error=$boundedError"
+            )
         }
 
         return ShellCommandResult(
@@ -101,5 +111,16 @@ class AdbShellClientImpl @Inject constructor(
 
     companion object {
         private const val TAG = "AdbShellClientShizuku"
+        private const val MAX_LOGGED_ERROR_CHARS = 512
+    }
+
+    private fun ShellCommandSpec.operationName(): String = when (this) {
+        is ShellCommandSpec.PackageCompile -> "PackageCompile(package=$packageName)"
+        is ShellCommandSpec.PackageCompileCheck -> "PackageCompileCheck(package=$packageName)"
+        is ShellCommandSpec.PackageCompileReset -> "PackageCompileReset(package=$packageName)"
+        is ShellCommandSpec.PackageDump -> "PackageDump(package=$packageName)"
+        is ShellCommandSpec.DumpsysPackageForPackage -> "PackageDumpsys(package=$packageName)"
+        is ShellCommandSpec.GetStandbyBucket -> "GetStandbyBucket(package=$packageName)"
+        else -> this::class.simpleName ?: "UnknownShellOperation"
     }
 }

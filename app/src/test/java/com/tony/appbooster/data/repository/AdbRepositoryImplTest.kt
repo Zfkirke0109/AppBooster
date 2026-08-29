@@ -62,7 +62,7 @@ class AdbRepositoryImplTest {
         logger = OptimizationLogger()
         packageQuery = mockk()
         compilationResolver = mockk(relaxed = true)
-        optimizationStepDao = mockk()
+        optimizationStepDao = mockk(relaxed = true)
         deviceGuardRepository = mockk()
         settingsRepository = mockk()
         telemetryRepository = mockk(relaxed = true)
@@ -632,12 +632,17 @@ class AdbRepositoryImplTest {
             throw CancellationException("Worker cancelled")
         }
 
-        val result = repository.executeOptimizationCommand(
-            mode = AppOptimizationType.SPEED_PROFILE,
-            forceOptimize = true
-        )
+        var cancellationPropagated = false
+        try {
+            repository.executeOptimizationCommand(
+                mode = AppOptimizationType.SPEED_PROFILE,
+                forceOptimize = true
+            )
+        } catch (_: CancellationException) {
+            cancellationPropagated = true
+        }
 
-        assertTrue(result is Resource.Success)
+        assertTrue(cancellationPropagated)
         assertFalse(repository.optimizationProgress.value.isRunning)
         assertEquals("", repository.optimizationProgress.value.currentAppPackage)
         assertTrue(repository.optimizationProgress.value.result is OptimizationResult.Canceled)
@@ -667,12 +672,17 @@ class AdbRepositoryImplTest {
         coEvery { shellDataSource.executeCommandDetailed(command) } returns
             Result.failure(CancellationException("Worker cancelled"))
 
-        val result = repository.executeOptimizationCommand(
-            mode = AppOptimizationType.SPEED_PROFILE,
-            forceOptimize = true
-        )
+        var cancellationPropagated = false
+        try {
+            repository.executeOptimizationCommand(
+                mode = AppOptimizationType.SPEED_PROFILE,
+                forceOptimize = true
+            )
+        } catch (_: CancellationException) {
+            cancellationPropagated = true
+        }
 
-        assertTrue(result is Resource.Success)
+        assertTrue(cancellationPropagated)
         assertTrue(repository.optimizationProgress.value.result is OptimizationResult.Canceled)
         assertEquals(0, repository.optimizationProgress.value.failedOrRefusedCount)
         coVerify(exactly = 0) {

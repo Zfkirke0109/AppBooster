@@ -9,7 +9,7 @@ import com.tony.appbooster.data.local.optimization.OptimizationRunEntity
 
 @Database(
     entities = [OptimizationStepEntity::class, OptimizationRunEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 abstract class AppBoosterDatabase : RoomDatabase() {

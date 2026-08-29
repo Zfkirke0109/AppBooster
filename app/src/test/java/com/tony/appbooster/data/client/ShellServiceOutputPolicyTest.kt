@@ -15,6 +15,7 @@ class ShellServiceOutputPolicyTest {
             appendLine("Dexopt state:")
             appendLine("  arm64: [status=speed] [reason=cmdline]")
             appendLine("lastUpdateTime=2026-07-17 03:07:25")
+            appendLine("pkgFlags=[ SYSTEM HAS_CODE ]")
             appendLine("codePath=/product/overlay/example")
             appendLine("overlayTarget=android")
         }
@@ -28,6 +29,7 @@ class ShellServiceOutputPolicyTest {
         assertTrue(reduced.contains("Dexopt state"))
         assertTrue(reduced.contains("[status=speed]"))
         assertTrue(reduced.contains("lastUpdateTime="))
+        assertTrue(reduced.contains("pkgFlags=[ SYSTEM HAS_CODE ]"))
         assertTrue(reduced.contains("codePath="))
         assertTrue(reduced.contains("overlayTarget="))
         assertTrue(reduced.length <= ShellServiceOutputPolicy.MAX_PACKAGE_EVIDENCE_CHARS)
@@ -40,6 +42,28 @@ class ShellServiceOutputPolicyTest {
             reader = StringReader("x".repeat(ShellServiceOutputPolicy.MAX_STDOUT_CHARS * 2))
         )
 
+        assertTrue(reduced.length <= ShellServiceOutputPolicy.MAX_STDOUT_CHARS)
+        assertTrue(reduced.endsWith("[output truncated by ShellService]"))
+    }
+
+    @Test
+    fun `worst case verbose compile output for 768 packages remains Binder safe`() {
+        val onePackage = buildString {
+            append("DexContainerFileDexoptResult{")
+            append("actualCompilerFilter=speed-profile,status=PERFORMED,")
+            append("sizeBytes=1884388,sizeBeforeBytes=1884388,")
+            append("extendedStatusFlags=")
+            append("X".repeat(700))
+            appendLine("}")
+        }
+        val rawOutput = onePackage.repeat(768)
+
+        val reduced = ShellServiceOutputPolicy.readStdout(
+            commandArgs = listOf("cmd", "package", "compile", "-m", "speed-profile", "--verbose", "--all"),
+            reader = StringReader(rawOutput)
+        )
+
+        assertTrue(rawOutput.length > ShellServiceOutputPolicy.MAX_STDOUT_CHARS)
         assertTrue(reduced.length <= ShellServiceOutputPolicy.MAX_STDOUT_CHARS)
         assertTrue(reduced.endsWith("[output truncated by ShellService]"))
     }

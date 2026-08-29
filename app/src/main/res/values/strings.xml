@@ -88,7 +88,7 @@
     <string name="dashboard_result_paused_title">Optimization paused</string>
     <string name="dashboard_result_completed_count">%1$d of %2$d apps verified optimized</string>
     <string name="dashboard_result_completed_issues_title">Finished with issues</string>
-    <string name="dashboard_result_completed_issues_count">%1$d verified, %2$d failed/refused, %3$d unverified</string>
+    <string name="dashboard_result_completed_issues_count">%1$d requested filter, %2$d failed/refused, %3$d Android-adjusted, %4$d not applicable, %5$d verification unavailable</string>
     <string name="dashboard_result_canceled_count">%1$d of %2$d apps optimized before stopping</string>
     <string name="dashboard_result_failed_count">%1$d of %2$d apps optimized before the failure</string>
 
@@ -265,6 +265,9 @@
     <string name="analysis_card_no_profile">No Profile</string>
     <string name="analysis_card_failed_refused">Failed / Refused</string>
     <string name="analysis_card_unverified">Unverified</string>
+    <string name="analysis_card_os_adjusted">Android applied a different compiler filter; no command failure</string>
+    <string name="analysis_card_not_applicable">Skipped because ART reported the package as not applicable</string>
+    <string name="analysis_card_verification_unavailable">Post-run ART verification unavailable</string>
     <string name="analysis_view_details">View Details</string>
 
     <!-- Activity feed UI -->

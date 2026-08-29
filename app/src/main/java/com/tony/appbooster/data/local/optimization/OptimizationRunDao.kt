@@ -45,7 +45,10 @@ interface OptimizationRunDao {
             alreadyOptimizedCount = :alreadyOptimizedCount,
             skippedNoProfileCount = :skippedNoProfileCount,
             failedOrRefusedCount = :failedOrRefusedCount,
-            unverifiedCount = :unverifiedCount
+            unverifiedCount = :unverifiedCount,
+            osAdjustedFilterCount = :osAdjustedFilterCount,
+            skippedNotApplicableCount = :skippedNotApplicableCount,
+            verificationUnavailableCount = :verificationUnavailableCount
         WHERE runId = :runId
         """
     )
@@ -56,7 +59,10 @@ interface OptimizationRunDao {
         alreadyOptimizedCount: Int,
         skippedNoProfileCount: Int,
         failedOrRefusedCount: Int,
-        unverifiedCount: Int
+        unverifiedCount: Int,
+        osAdjustedFilterCount: Int,
+        skippedNotApplicableCount: Int,
+        verificationUnavailableCount: Int
     )
 
     @Query(
@@ -71,6 +77,10 @@ interface OptimizationRunDao {
             skippedNoProfileCount = :skippedNoProfileCount,
             failedOrRefusedCount = :failedOrRefusedCount,
             unverifiedCount = :unverifiedCount,
+            osAdjustedFilterCount = :osAdjustedFilterCount,
+            skippedNotApplicableCount = :skippedNotApplicableCount,
+            verificationUnavailableCount = :verificationUnavailableCount,
+            artStorageDeltaBytes = :artStorageDeltaBytes,
             canceledCount = :canceledCount,
             storageTotalAfterBytes = :storageTotalAfterBytes,
             storageAvailableAfterBytes = :storageAvailableAfterBytes,
@@ -89,6 +99,10 @@ interface OptimizationRunDao {
         skippedNoProfileCount: Int,
         failedOrRefusedCount: Int,
         unverifiedCount: Int,
+        osAdjustedFilterCount: Int,
+        skippedNotApplicableCount: Int,
+        verificationUnavailableCount: Int,
+        artStorageDeltaBytes: Long,
         canceledCount: Int,
         storageTotalAfterBytes: Long,
         storageAvailableAfterBytes: Long,
