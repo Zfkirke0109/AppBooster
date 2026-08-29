@@ -21,7 +21,7 @@ package com.tony.appbooster.domain.model.common
  * @property alreadyOptimizedCount Number of target packages skipped because they already matched.
  * @property skippedNoProfileCount Number of speed-profile targets skipped because no runtime profile exists.
  * @property failedOrRefusedCount Number of target packages whose compile command failed or was refused.
- * @property unverifiedCount Number of target packages whose command returned success but post-run evidence was unclear.
+ * @property unverifiedCount Number of targets not verified at the exact requested filter, excluding intentional skips.
  * @property osAdjustedFilterCount Number of packages where ART applied a different filter.
  * @property skippedNotApplicableCount Number of packages ART reported as not applicable.
  * @property verificationUnavailableCount Number of packages lacking post-run ART evidence.

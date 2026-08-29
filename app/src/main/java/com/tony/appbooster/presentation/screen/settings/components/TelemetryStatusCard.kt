@@ -66,10 +66,10 @@ internal fun TelemetryStatusCard(
             Text(
                 stringResource(
                     R.string.telemetry_counts,
-                    run.optimizedSucceededCount,
-                    run.alreadyOptimizedCount,
-                    run.failedOrRefusedCount,
-                    run.unverifiedCount
+                    run.successCount,
+                    run.skippedCount,
+                    run.failedCount,
+                    run.explicitlyUnverifiedCount
                 )
             )
             Text(

@@ -37,6 +37,22 @@ data class OptimizationRunTelemetry(
     val exportError: String? = null,
     val exportedAtMs: Long? = null
 ) {
+    /** Packages verified at the requested compiler filter during this run. */
+    val successCount: Int
+        get() = optimizedSucceededCount
+
+    /** Packages intentionally skipped because no compile command was applicable. */
+    val skippedCount: Int
+        get() = alreadyOptimizedCount + skippedNoProfileCount + skippedNotApplicableCount
+
+    /** Packages whose compile command failed or was refused. */
+    val failedCount: Int
+        get() = failedOrRefusedCount
+
+    /** Packages that ran without failure but could not be verified at the requested filter. */
+    val explicitlyUnverifiedCount: Int
+        get() = osAdjustedFilterCount + verificationUnavailableCount
+
     companion object {
         const val PACKAGE_MANAGER_THREAD_POLICY = "package-manager-managed"
         const val UNKNOWN_ART_MODULE_VERSION = "unknown"

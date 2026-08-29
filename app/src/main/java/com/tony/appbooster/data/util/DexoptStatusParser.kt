@@ -168,8 +168,7 @@ internal object DexoptStatusParser {
         return ClassifiedCompileResult(
             outcome = outcome,
             art = art,
-            stableOsAdjusted = outcome == OptimizationStepOutcome.OS_ADJUSTED_FILTER ||
-                outcome == OptimizationStepOutcome.SKIPPED_NOT_APPLICABLE
+            stableOsAdjusted = outcome == OptimizationStepOutcome.OS_ADJUSTED_FILTER
         )
     }
 
@@ -185,12 +184,14 @@ internal object DexoptStatusParser {
 
     /** Returns false only when package flags explicitly prove the APK has no code. */
     fun parsePackageHasCode(output: String): Boolean? {
-        val flagsLine = output.lineSequence()
+        val lines = output.lineSequence()
             .map(String::trim)
-            .firstOrNull { line ->
-                line.startsWith("pkgFlags=", ignoreCase = true) ||
-                    line.startsWith("flags=", ignoreCase = true)
-            }
+            .toList()
+        val flagsLine = lines.firstOrNull { line ->
+            line.startsWith("pkgFlags=[", ignoreCase = true)
+        } ?: lines.firstOrNull { line ->
+            line.startsWith("flags=[", ignoreCase = true)
+        }
             ?: return null
         return Regex("""\bHAS_CODE\b""", RegexOption.IGNORE_CASE).containsMatchIn(flagsLine)
     }

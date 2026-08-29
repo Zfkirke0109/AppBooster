@@ -45,7 +45,7 @@ class DexoptStatusParserTest {
 
         assertEquals(OptimizationStepOutcome.SKIPPED_NOT_APPLICABLE, result.outcome)
         assertEquals("speed-profile", result.art.actualCompilerFilter)
-        assertTrue(result.stableOsAdjusted)
+        assertFalse(result.stableOsAdjusted)
     }
 
     @Test
@@ -72,6 +72,24 @@ class DexoptStatusParserTest {
         assertEquals(false, DexoptStatusParser.parsePackageHasCode("pkgFlags=[ SYSTEM ]"))
         assertEquals(true, DexoptStatusParser.parsePackageHasCode("pkgFlags=[ SYSTEM HAS_CODE ]"))
         assertNull(DexoptStatusParser.parsePackageHasCode("Dexopt state:"))
+    }
+
+    @Test
+    fun `Samsung numeric component flags do not override package HAS_CODE`() {
+        val output = """
+            flags=0x0
+            flags=0x0
+            codePath=/data/app/example/base.apk
+            flags=[ HAS_CODE ALLOW_CLEAR_USER_DATA LARGE_HEAP ]
+            pkgFlags=[ HAS_CODE ALLOW_CLEAR_USER_DATA LARGE_HEAP ]
+        """.trimIndent()
+
+        assertEquals(true, DexoptStatusParser.parsePackageHasCode(output))
+    }
+
+    @Test
+    fun `numeric flags alone are not proof that a package has no code`() {
+        assertNull(DexoptStatusParser.parsePackageHasCode("flags=0x0"))
     }
 
     // ── parseCompileCheckNeedsOptimization ───────────────────────────────────

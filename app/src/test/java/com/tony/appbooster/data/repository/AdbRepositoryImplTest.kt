@@ -18,6 +18,8 @@ import com.tony.appbooster.domain.model.device.StandbyBucket
 import com.tony.appbooster.domain.model.device.StandbyBucketSnapshot
 import com.tony.appbooster.domain.model.device.ThermalStatusSnapshot
 import com.tony.appbooster.domain.model.settings.AppOptimizationType
+import com.tony.appbooster.domain.model.telemetry.OptimizationRunStatus
+import com.tony.appbooster.domain.model.telemetry.OptimizationRunTelemetry
 import com.tony.appbooster.domain.repository.DeviceGuardRepository
 import com.tony.appbooster.domain.repository.SettingsRepository
 import com.tony.appbooster.domain.repository.OptimizationTelemetryRepository
@@ -352,6 +354,81 @@ class AdbRepositoryImplTest {
             }
         }
         coVerify(exactly = 1) { shellDataSource.executeCommandDetailed(pendingCommand) }
+    }
+
+    @Test
+    fun `given resume telemetry includes preflight classifications then preserves them`() = runTest {
+        val pendingPackage = "com.example.pending"
+        val runId = 79L
+        val pendingStep = optimizationStep(
+            id = 24L,
+            runId = runId,
+            stepIndex = 0,
+            packageName = pendingPackage,
+            skippedCount = 10
+        )
+        val pendingCommand = ShellCommandSpec.PackageCompile(
+            packageName = pendingPackage,
+            mode = "speed-profile",
+            force = true
+        )
+        val persistedRun = OptimizationRunTelemetry(
+            runId = runId,
+            modeKey = "SPEED_PROFILE",
+            requestedCompilerFilter = "speed-profile",
+            fullDexoptScope = false,
+            forceOptimize = true,
+            status = OptimizationRunStatus.PAUSED,
+            startedAtMs = 1L,
+            totalTargetedCount = 11,
+            alreadyOptimizedCount = 5,
+            unverifiedCount = 2,
+            osAdjustedFilterCount = 2,
+            skippedNotApplicableCount = 3,
+            storageBefore = allowedStorageSnapshot(),
+            appVersionName = "test",
+            appVersionCode = 1L,
+            deviceManufacturer = "samsung",
+            deviceModel = "test",
+            sdkInt = 36,
+            buildFingerprint = "test"
+        )
+
+        coEvery { optimizationStepDao.findLatestResumableRunId("SPEED_PROFILE", true) } returns runId
+        coEvery { optimizationStepDao.prepareResumedRun(runId, any()) } returns listOf(pendingStep)
+        coEvery { telemetryRepository.getRun(runId) } returns persistedRun
+        coJustRun { optimizationStepDao.markRunning(pendingStep.id, "verify", any()) }
+        coJustRun {
+            optimizationStepDao.markSucceeded(
+                id = pendingStep.id,
+                afterFilter = "speed-profile",
+                exitCode = 0,
+                stdout = "Success",
+                stderr = "",
+                updatedAtMs = any()
+            )
+        }
+        coEvery {
+            compilationResolver.queryPackageCompilationInfo(pendingPackage, "speed-profile")
+        } returnsMany listOf(
+            compilationInfo(pendingPackage, compilerFilter = "verify"),
+            compilationInfo(pendingPackage, compilerFilter = "speed-profile", needsOptimization = false)
+        )
+        coEvery { shellDataSource.executeCommandDetailed(pendingCommand) } returns
+            Result.success(ShellCommandResult(exitCode = 0, stdout = "Success", stderr = ""))
+        stubPackageDump(pendingPackage, "speed-profile")
+
+        val result = repository.executeOptimizationCommand(
+            mode = AppOptimizationType.SPEED_PROFILE,
+            forceOptimize = true
+        )
+
+        assertTrue(result is Resource.Success)
+        assertTrue(repository.optimizationProgress.value.result is OptimizationResult.CompletedWithIssues)
+        assertEquals(1, repository.optimizationProgress.value.optimizedSucceededCount)
+        assertEquals(2, repository.optimizationProgress.value.osAdjustedFilterCount)
+        assertEquals(3, repository.optimizationProgress.value.skippedNotApplicableCount)
+        assertEquals(2, repository.optimizationProgress.value.unverifiedCount)
     }
 
     @Test
@@ -716,13 +793,14 @@ class AdbRepositoryImplTest {
         runId: Long,
         stepIndex: Int,
         packageName: String,
-        status: String = OptimizationStepStatus.PENDING
+        status: String = OptimizationStepStatus.PENDING,
+        skippedCount: Int = 0
     ): OptimizationStepEntity = OptimizationStepEntity(
         id = id,
         runId = runId,
         stepIndex = stepIndex,
         totalSteps = 2,
-        skippedCount = 0,
+        skippedCount = skippedCount,
         packageName = packageName,
         mode = "speed-profile",
         forceOptimize = true,
