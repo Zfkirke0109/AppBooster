@@ -217,6 +217,9 @@
     <string name="analysis_card_no_profile">Nessun profilo</string>
     <string name="analysis_card_failed_refused">Non riuscite / rifiutate</string>
     <string name="analysis_card_unverified">Non verificate</string>
+    <string name="analysis_card_os_adjusted">Android ha applicato un filtro del compilatore diverso; nessun errore del comando</string>
+    <string name="analysis_card_not_applicable">Ignorata perché ART ha indicato il pacchetto come non applicabile</string>
+    <string name="analysis_card_verification_unavailable">Verifica ART successiva all’esecuzione non disponibile</string>
     <string name="analysis_view_details">Vedi dettagli</string>
 
     <!-- Feed attività -->

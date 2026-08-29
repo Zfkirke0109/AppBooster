@@ -26,7 +26,7 @@ val hasReleaseSigning: Boolean = listOf(
 android {
     namespace = "com.tony.appbooster"
     compileSdk {
-        version = release(36)
+        version = release(37)
     }
 
     defaultConfig {
@@ -107,6 +107,7 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.material3.windowsizeclass)
     implementation(libs.androidx.navigation.compose)
+    implementation(libs.kotlinx.coroutines.android)
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
     testImplementation(libs.turbine)
@@ -141,7 +142,6 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
 
     // Room
-    implementation(platform(libs.kotlinx.serialization.bom))
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)

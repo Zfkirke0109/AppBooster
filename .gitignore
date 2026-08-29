@@ -48,3 +48,15 @@ keystore.properties
 release-signing.properties
 gradle-local.properties
 *.local.gradle.properties
+
+# Device-validation evidence and build artifacts.
+# /validation/ is already ignored above, but these rules are defensive: an earlier
+# session force-added 37 device files (screenshots plus an app database containing a
+# full on-device package inventory) past that rule. This repo is public — device
+# evidence and built binaries stay on local disk, never in git history.
+*.patch
+*.apk
+*.aab
+*.db
+*.db-shm
+*.db-wal
