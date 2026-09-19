@@ -90,6 +90,34 @@ class AdbRepositoryImplTest {
     }
 
     @Test
+    fun `full compile verifies every verbose container before unrelated dump state`() = runTest {
+        val pkg = "com.example.multidex"
+        val step = optimizationStep(id = 90L, runId = 900L, stepIndex = 0, packageName = pkg)
+        coEvery { packageQuery.queryInstalledPackages() } returns listOf(pkg)
+        coEvery { optimizationStepDao.findLatestResumableRunId("ADVANCED_FULL_COMPILE", true) } returns null
+        coEvery { optimizationStepDao.getStepsForRun(any()) } returns listOf(step)
+        coEvery { compilationResolver.queryPackageCompilationInfo(pkg, "speed") } returns
+            compilationInfo(pkg, compilerFilter = "verify")
+        coEvery { shellDataSource.executeCommandDetailed(ShellCommandSpec.PackageCompileHelp) } returns
+            Result.success(ShellCommandResult(0, ONE_UI_85_PACKAGE_HELP, ""))
+        coEvery { shellDataSource.executeCommandDetailed(match { it is ShellCommandSpec.PackageCompile }) } returns
+            Result.success(ShellCommandResult(0, """
+                [$pkg]
+                DexContainerFileDexoptResult{actualCompilerFilter=speed, status=PERFORMED, sizeBytes=100, sizeBeforeBytes=50}
+                DexContainerFileDexoptResult{actualCompilerFilter=verify, status=PERFORMED, sizeBytes=20, sizeBeforeBytes=10}
+                Final Status: PERFORMED
+            """.trimIndent(), ""))
+        stubPackageDump(pkg, "speed")
+
+        val result = repository.executeOptimizationCommand(AppOptimizationType.ADVANCED_FULL_COMPILE, true)
+
+        assertTrue(result is Resource.Success)
+        assertEquals(0, repository.optimizationProgress.value.optimizedSucceededCount)
+        assertEquals(1, repository.optimizationProgress.value.osAdjustedFilterCount)
+        assertEquals(OptimizationResult.CompletedWithIssues, repository.optimizationProgress.value.result)
+    }
+
+    @Test
     fun `given compile command fails for one package when optimizing then continues and completes remaining packages`() = runTest {
         val goodPackage = "com.example.good"
         val failingPackage = "com.example.bad"
