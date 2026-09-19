@@ -101,7 +101,57 @@ mismatch in Room's migration test helper. The app and instrumentation now share
 the kotlinx.serialization 1.8.1 BOM so Room's generated schema serializers see
 the required interface implementation instead of failing with `AbstractMethodError`.
 
-### Platform and device checks
+### Supplied 1.7.2 Samsung run and recording
+
+The later exports ending in `1789843556488` and `1789843565429` both describe
+run `1789841941482`; only `exportedAtUtc` differs. They identify version
+**1.7.2 / 10702**, the same SM-S918U1 Android 17 build, and ART module `2.1.0`.
+The recording follows compilation through completion and telemetry export.
+This is now physical-device evidence that analysis and Shizuku compilation
+progress past the 1.7.1 scan failure; it does not cover every device check below.
+
+- Run duration: 2026-09-19 18:19:01.520–18:45:56.486 UTC (26m 54.966s).
+- 756 targeted: 670 already matching, 30 newly verified, 37 Android-adjusted,
+  19 not applicable, zero failed/refused, zero missing verification evidence.
+- 86 step records; 68 actual commands (30 verified, 37 adjusted, one ART skip).
+  The other 18 steps were excluded before compilation because they had no DEX code.
+- All 86 recorded package update identities are populated. The 670 analysis-time
+  skips do not have individual records in this export, so their underlying package
+  dumps cannot be independently checked from these files.
+- All 37 adjusted results retain at least one `verify` container. Eleven also
+  contain `speed` containers, so a package may have partially reached the requested
+  setting. These are not command failures or complete full-scope successes.
+- The recorded pause at Google Play services corresponds to a completed
+  228,275 ms compile command. Package-based progress does not move while that
+  command runs; the recording alone does not establish a UI freeze.
+- Reported aggregate ART growth is 3,441,212,112 bytes (3.20 GiB). Device free
+  space fell by 5,248,954,368 bytes (4.89 GiB), with 181.42 GiB remaining.
+  The latter includes other activity, including this screen recording.
+- Two exported stdout fields are explicitly truncated at 8,192 characters. Their
+  stored ART aggregates were calculated before export truncation. All 66 commands
+  with complete exported stdout match their stored aggregate sizes; the remaining
+  two aggregates cannot be fully reconstructed from these bounded exports.
+- The exports and recording are not launch-time, frame-time, battery-efficiency,
+  or thermal benchmarks. A shorter repeat run is not evidence of a speedup.
+
+The recording also exposes a result-card arithmetic bug: it shows **644 optimized**
+instead of **700** (670 already matching + 30 newly verified). The UI subtracts
+all 37 adjusted and 19 not-applicable outcomes from the 670 pre-run skips, even
+though those outcomes belong to the 86 processed steps. JSON totals remain
+correct and reconcile to 756. The regression test renders the complete dashboard
+card from this run's progress state and checks the optimized and exception counts.
+Version **1.7.3 / 10703** passes the explicit already-matching count through the
+result model and adds it to newly verified successes, leaving the exception
+categories separate. This changes presentation, not compilation or stored results.
+
+The first regression run failed on the expected 700-count assertion, then the
+API 37 emulator's `TaskSnapshotPersister` hit the same DMA graphics-driver
+assertion previously seen in gesture navigation and aborted the following UI test.
+CI also disables `GLDirectMem`: gfxstream advertises the affected readback path
+only when direct memory and the shared-slots allocator are enabled. This is an
+emulator configuration change, not a device or application setting.
+
+### Platform and remaining device checks
 
 The current project already compiles against SDK 37 and targets SDK 36.
 Running on Android 17 does not require changing target SDK to 37. A target-SDK
@@ -113,7 +163,8 @@ Normal `speed-profile` or a selected set of heavy apps avoids routinely repeatin
 this three-hour full-device compilation. Full `speed` uses substantially more
 storage and does not guarantee faster execution for every workload.
 
-A physical-device check is still required after CI passes:
+The supplied 1.7.2 run verifies scanning and compilation on this Samsung. Additional
+physical-device checks remain after CI passes:
 
 1. Verify APK package/version/signing certificate before installing over the
    existing app; never uninstall or clear its data to solve a signing mismatch.

@@ -40,9 +40,11 @@ sealed interface HeroCardStatus {
         override val optimizationMode: AppOptimizationType = AppOptimizationType.SPEED_PROFILE
     ) : HeroCardStatus
 
+    /** Uses the explicit already-matching count; other outcomes are separate populations. */
     data class CompletedWithIssues(
         override val processedCount: Int,
         override val skippedCount: Int,
+        val alreadyOptimizedCount: Int,
         val failedCount: Int,
         val osAdjustedCount: Int,
         val skippedNotApplicableCount: Int,
@@ -118,4 +120,3 @@ sealed interface HeroCardStatus {
         override val totalCount: Int = optimizedCount + noProfileCount
     }
 }
-

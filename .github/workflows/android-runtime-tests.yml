@@ -58,7 +58,9 @@ jobs:
           disk-size: 8192M
           # Use software rendering; select three-button navigation after boot to
           # avoid API 37's mapper.ranchu crash in gesture-bar region sampling.
-          emulator-options: -no-window -gpu software -no-snapshot -noaudio -no-boot-anim -camera-back none -camera-front none -accel on -logcat '*:E'
+          # Disable direct GL memory so gfxstream does not advertise the DMA
+          # readback path that also crashes TaskSnapshotPersister between UI tests.
+          emulator-options: -no-window -gpu software -feature -GLDirectMem -no-snapshot -noaudio -no-boot-anim -camera-back none -camera-front none -accel on -logcat '*:E'
           disable-animations: true
           pre-emulator-launch-script: |
             adb start-server

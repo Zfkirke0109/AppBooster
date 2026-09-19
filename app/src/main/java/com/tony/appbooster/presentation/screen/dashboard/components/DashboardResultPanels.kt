@@ -230,10 +230,7 @@ fun HeroResultPanel(
             } else if (status is HeroCardStatus.CompletedWithIssues) {
                 OptimizationStatsRow(
                     needsOptimizationCount = 0,
-                    optimizedCount = status.processedCount + (
-                        status.skippedCount - status.noProfileCount - status.osAdjustedCount -
-                            status.skippedNotApplicableCount
-                        ).coerceAtLeast(0),
+                    optimizedCount = status.processedCount + status.alreadyOptimizedCount,
                     noProfileCount = status.noProfileCount,
                     failedCount = status.failedCount,
                     osAdjustedCount = status.osAdjustedCount,

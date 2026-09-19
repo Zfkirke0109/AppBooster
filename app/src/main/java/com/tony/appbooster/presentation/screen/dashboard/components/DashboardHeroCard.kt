@@ -226,6 +226,7 @@ fun DashboardHeroCard(
                             status = HeroCardStatus.CompletedWithIssues(
                                 processedCount = model.optimizationProgress.optimizedSucceededCount,
                                 skippedCount = model.optimizationProgress.skippedCount,
+                                alreadyOptimizedCount = model.optimizationProgress.alreadyOptimizedCount,
                                 failedCount = model.optimizationProgress.failedOrRefusedCount,
                                 osAdjustedCount = model.optimizationProgress.osAdjustedFilterCount,
                                 skippedNotApplicableCount =
