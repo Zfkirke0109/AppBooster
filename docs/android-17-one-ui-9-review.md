@@ -91,6 +91,11 @@ emulator. Compiling the tests or running them on the desktop JDK alone is not
 sufficient. The emulator verifies the Android runtime and UI; it does not replace
 a Samsung One UI / Shizuku check on the phone.
 
+The API 37 emulator uses hardware navigation keys: its gesture-bar region
+sampling crashes the emulator's `mapper.ranchu` graphics driver before tests
+can run. This setting is confined to CI and does not change the app. Gesture
+navigation and Samsung system UI behavior remain part of the phone check.
+
 ### Platform and device checks
 
 The current project already compiles against SDK 37 and targets SDK 36.
