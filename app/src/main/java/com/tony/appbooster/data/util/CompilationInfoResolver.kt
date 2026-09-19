@@ -16,7 +16,7 @@ import javax.inject.Singleton
  * querying multiple system data sources in order of reliability and cost.
  *
  * The multi-step fallback strategy is:
- * 1. **Session cache** — zero shell calls for packages optimised this session.
+ * 1. **Package metadata** — read update identity, cached only for the current scan.
  * 2. **`dumpsys package dexopt`** — single call cached for the entire run.
  * 3. **`dumpsys package <pkg>`** — per-package fallback.
  * 4. **`cmd package compile --check`** — per-package binary yes/no.
@@ -33,22 +33,10 @@ class CompilationInfoResolver @Inject constructor(
 ) {
 
     companion object {
-        /** Hours before a session-cached optimisation result expires. */
-        private const val SESSION_CACHE_VALIDITY_HOURS = 24L
-
-        /** Milliseconds per hour — avoids magic literal in cache TTL checks. */
-        private const val MS_PER_HOUR = 1000L * 60 * 60
-
         /** Common Android date format found in `dumpsys package` output. */
         private val DUMPSYS_DATE_FORMAT: DateTimeFormatter =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
     }
-
-    /**
-     * Packages successfully optimised in this session (package → timestamp).
-     * Avoids re-checking packages we just compiled.
-     */
-    private val recentlyOptimizedPackages = mutableMapOf<String, Long>()
 
     /**
      * Cached output of `dumpsys package dexopt` for the current analysis run.
@@ -62,12 +50,12 @@ class CompilationInfoResolver @Inject constructor(
     private val cachedPackageDumps = mutableMapOf<String, String>()
 
     /**
-     * Records a package as successfully optimised so future queries skip it.
+     * Invalidates package metadata after compilation without inventing a compiler filter.
      *
      * @param packageName Package that was just compiled.
      */
     fun markOptimized(packageName: String) {
-        recentlyOptimizedPackages[packageName] = System.currentTimeMillis()
+        cachedPackageDumps.remove(packageName)
     }
 
     /**
@@ -96,18 +84,20 @@ class CompilationInfoResolver @Inject constructor(
         targetFilter: String
     ): AppCompilationInfo {
 
-        // ── Step 1: session cache ──────────────────────────────────────────────
-        fromSessionCache(packageName, targetFilter)?.let { return it }
+        // Update identity is needed even when the global ART dump has a filter.
+        // A success timestamp alone cannot prove the current mode or installed version.
+        val packageOutput = packageDump(packageName)
+        val lastUpdateTimeMs = packageOutput?.lineSequence()
+            ?.map(String::trim)
+            ?.firstOrNull { it.startsWith("lastUpdateTime=", ignoreCase = true) }
+            ?.substringAfter("=")?.trim()?.let(::parseTimestamp)
 
-        var lastUpdateTimeMs: Long? = null
+        fromDexoptDump(packageName, targetFilter, lastUpdateTimeMs)?.let {
+            if (it.compilerFilter != "unknown-present") return it
+        }
 
-        // ── Step 2: global dexopt dump ─────────────────────────────────────────
-        fromDexoptDump(packageName, targetFilter, lastUpdateTimeMs)?.let { return it }
-
-        // ── Step 3: per-package dumpsys ────────────────────────────────────────
-        fromPackageDumpsys(packageName, targetFilter)?.let { (info, updateMs) ->
+        fromPackageDumpsys(packageName, targetFilter)?.let { (info, _) ->
             if (info != null) return info
-            if (updateMs != null) lastUpdateTimeMs = updateMs
         }
 
         // ── Step 4: compile --check ────────────────────────────────────────────
@@ -120,28 +110,6 @@ class CompilationInfoResolver @Inject constructor(
     // ─────────────────────────────────────────────────────────────────────────────
     // Fallback steps
     // ─────────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Step 1 — returns cached info when the package was optimised this session.
-     */
-    private fun fromSessionCache(
-        packageName: String,
-        targetFilter: String
-    ): AppCompilationInfo? {
-        val cachedTime = recentlyOptimizedPackages[packageName] ?: return null
-        val hoursSince = (System.currentTimeMillis() - cachedTime) / MS_PER_HOUR
-        if (hoursSince >= SESSION_CACHE_VALIDITY_HOURS) return null
-
-        return AppCompilationInfo(
-            packageName = packageName,
-            compilerFilter = targetFilter,
-            lastCompilationTimeMs = cachedTime,
-            lastUpdateTimeMs = null,
-            oatFileExists = true,
-            skipReason = AppCompilationInfo.SkipReason.RecentlyOptimized(0, targetFilter),
-            needsOptimization = false
-        )
-    }
 
     /**
      * Step 2 — parses the global `dumpsys package dexopt` output (fetched once
@@ -186,8 +154,7 @@ class CompilationInfoResolver @Inject constructor(
         logger.addLogEntry(LogEntryType.ANALYZING, "Fallback: package dump",
             packageName = packageName, detail = "dumpsys package")
 
-        val output = shellDataSource.executeCommand(ShellCommandSpec.DumpsysPackageForPackage(packageName))
-            .getOrNull()
+        val output = packageDump(packageName)
 
         if (output == null) {
             logger.addLogEntry(LogEntryType.ERROR, "Package dump failed",
@@ -195,20 +162,11 @@ class CompilationInfoResolver @Inject constructor(
             return null
         }
 
-        var filter: String? = null
-        var lastUpdateTimeMs: Long? = null
-
-        output.lineSequence().forEach { line ->
-            val lower = line.trim().lowercase()
-            when {
-                filter == null && (lower.contains("status=") || lower.contains("compiler") ||
-                    lower.contains("compilerfilter") || lower.contains("compiler-filter")) ->
-                    filter = DexoptStatusParser.parseCompilerFilterFromLine(lower)
-
-                lower.startsWith("lastupdatetime=") && lastUpdateTimeMs == null ->
-                    lastUpdateTimeMs = parseTimestamp(line.substringAfter("=").trim())
-            }
-        }
+        val filter = DexoptStatusParser.parseCompilerFilterFromDexoptDump(packageName, output)
+            ?.takeUnless { it == "unknown-present" }
+        val lastUpdateTimeMs = output.lineSequence().map(String::trim)
+            .firstOrNull { it.startsWith("lastUpdateTime=", ignoreCase = true) }
+            ?.substringAfter("=")?.trim()?.let(::parseTimestamp)
 
         return if (filter != null) {
             logger.addLogEntry(LogEntryType.INFO, "Dexopt status",
@@ -291,10 +249,6 @@ class CompilationInfoResolver @Inject constructor(
         val (needsOptimization, skipReason) = when {
             compilerFilter == null -> true to null
 
-            // "verify" ⇒ no runtime profile; profile-guided compilation is pointless
-            compilerFilter == "verify" && targetFilter.lowercase() == "speed-profile" ->
-                false to AppCompilationInfo.SkipReason.NoProfile(compilerFilter)
-
             // Overlay/RRO detection for packages present in dexopt but without filter details
             compilerFilter == "unknown-present" ->
                 resolveOverlay(packageName)
@@ -331,10 +285,7 @@ class CompilationInfoResolver @Inject constructor(
     private suspend fun resolveOverlay(
         packageName: String
     ): Pair<Boolean, AppCompilationInfo.SkipReason?> {
-        val dump = cachedPackageDumps[packageName] ?: run {
-            shellDataSource.executeCommand(ShellCommandSpec.DumpsysPackageForPackage(packageName))
-                .getOrNull()?.also { cachedPackageDumps[packageName] = it }
-        }
+        val dump = packageDump(packageName)
         val isOverlay = PackageClassifier.isOverlayLike(packageName, dump)
 
         return if (isOverlay) {
@@ -351,6 +302,11 @@ class CompilationInfoResolver @Inject constructor(
     // ─────────────────────────────────────────────────────────────────────────────
     // Helpers
     // ─────────────────────────────────────────────────────────────────────────────
+
+    private suspend fun packageDump(packageName: String): String? =
+        cachedPackageDumps[packageName] ?: shellDataSource
+            .executeCommand(ShellCommandSpec.DumpsysPackageForPackage(packageName))
+            .getOrNull()?.also { cachedPackageDumps[packageName] = it }
 
     /**
      * Fetches and caches the global `dumpsys package dexopt` output.

@@ -38,10 +38,8 @@ interface OptimizationStepDao {
           AND art_module_version = :artModuleVersion
           AND stableOsAdjusted = 1
           AND outcome = 'OS_ADJUSTED_FILTER'
-          AND (
-              packageLastUpdateTimeMs = :packageLastUpdateTimeMs OR
-              (packageLastUpdateTimeMs IS NULL AND :packageLastUpdateTimeMs IS NULL)
-          )
+          AND :packageLastUpdateTimeMs IS NOT NULL
+          AND packageLastUpdateTimeMs = :packageLastUpdateTimeMs
         ORDER BY updatedAtMs DESC
         LIMIT 1
         """

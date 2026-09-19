@@ -216,7 +216,7 @@ The installed Android package ID is `com.zfkirke0109.galaxyoptidroid`. The Kotli
 
 - **Android Studio Ladybug** (2024.3+) or newer
 - **JDK 17+**
-- **Android SDK 36**
+- **Android SDK 37**
 
 ### Build & Run
 
@@ -255,6 +255,9 @@ The repository includes a GitHub Actions workflow at `.github/workflows/android-
 | **Unit tests** | Every push & PR | Runs `./gradlew runUnitTests` (the existing Gradle task) |
 | **Signed release build** | Push to `master`, `main`, or `v*` tags, after tests pass | Builds signed APK + AAB and verifies the APK signature with `apksigner` |
 | **Publish GitHub Release** | Push to `v*` tags only | Creates a GitHub Release from recent commit notes and attaches the APK & AAB |
+
+The Android 17 / One UI 9 investigation and device validation scope are documented in
+[the September 2026 review](docs/android-17-one-ui-9-review.md).
 
 Release publishing is tag-driven. Push a tag such as `v1.7.0` after on-device validation to publish a GitHub Release.
 

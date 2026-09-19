@@ -1427,17 +1427,19 @@ class AdbRepositoryImpl @Inject constructor(
     ): PackageCompileVerification {
         val combinedOutput = "${commandResult.stdout}\n${commandResult.stderr}"
         val parsedArt = DexoptStatusParser.parseArtCompileResult(combinedOutput)
+        val hasContainerEvidence = combinedOutput.contains("DexContainerFileDexoptResult{")
         val verboseFilter = parsedArt.actualCompilerFilter
-            ?: DexoptStatusParser.parseCompilerFilterFromOutput(combinedOutput)
+            ?: if (!hasContainerEvidence) DexoptStatusParser.parseCompilerFilterFromOutput(combinedOutput) else null
 
-        val dumpFilter = runCatching {
+        val dumpFilter = if (verboseFilter == null && !hasContainerEvidence) runCatching {
             shellDataSource.executeCommandDetailed(ShellCommandSpec.PackageDump(packageName))
                 .getOrNull()
                 ?.takeIf { it.isSuccess }
-                ?.let { result -> DexoptStatusParser.parseCompilerFilterFromOutput(result.stdout) }
-        }.getOrNull()
+                ?.let { result -> DexoptStatusParser.parseCompilerFilterFromDexoptDump(packageName, result.stdout) }
+                ?.takeUnless { it == "unknown-present" }
+        }.getOrNull() else null
 
-        val resolverFilter = if (dumpFilter == null && verboseFilter == null) {
+        val resolverFilter = if (dumpFilter == null && verboseFilter == null && !hasContainerEvidence) {
             // Package state changed after compilation. Refresh resolver caches only
             // when direct package/verbose evidence could not verify the result.
             compilationResolver.resetCaches()
@@ -1448,8 +1450,8 @@ class AdbRepositoryImpl @Inject constructor(
             null
         }
 
-        val actualFilter = dumpFilter ?: verboseFilter ?: resolverFilter
-        val skipped = parsedArt.finalStatus == "SKIPPED" || parsedArt.status == "SKIPPED"
+        val actualFilter = verboseFilter ?: dumpFilter ?: resolverFilter
+        val skipped = (parsedArt.finalStatus ?: parsedArt.status) == "SKIPPED"
         val outcome = when {
             skipped -> OptimizationStepOutcome.SKIPPED_NOT_APPLICABLE
             actualFilter == null -> OptimizationStepOutcome.VERIFICATION_UNAVAILABLE
@@ -1460,8 +1462,8 @@ class AdbRepositoryImpl @Inject constructor(
             else -> OptimizationStepOutcome.OS_ADJUSTED_FILTER
         }
         val source = when {
-            dumpFilter != null -> VERIFICATION_SOURCE_PACKAGE_DUMP
             verboseFilter != null -> VERIFICATION_SOURCE_VERBOSE_OUTPUT
+            dumpFilter != null -> VERIFICATION_SOURCE_PACKAGE_DUMP
             resolverFilter != null -> VERIFICATION_SOURCE_RESOLVER
             else -> VERIFICATION_SOURCE_UNAVAILABLE
         }

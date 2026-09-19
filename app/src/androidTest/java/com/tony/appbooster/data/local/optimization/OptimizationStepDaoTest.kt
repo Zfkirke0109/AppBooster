@@ -64,6 +64,26 @@ class OptimizationStepDaoTest {
         assertEquals(30L, stepDao.findLatestResumableRunId(MODE, false))
     }
 
+    @Test
+    fun unknownPackageVersionCannotReuseAdjustedOutcome() = runBlocking {
+        stepDao.insertAll(listOf(step(40L, 100L).copy(
+            requestedFilter = "speed", androidBuild = "build", artModuleVersion = "art",
+            outcome = "OS_ADJUSTED_FILTER", stableOsAdjusted = true
+        )))
+        assertNull(stepDao.findStableAdjustedOutcome("com.example.app40", "speed", "build", "art", null))
+    }
+
+    @Test
+    fun adjustedOutcomeRequiresMatchingKnownPackageVersion() = runBlocking {
+        stepDao.insertAll(listOf(step(40L, 100L).copy(
+            requestedFilter = "speed", androidBuild = "build", artModuleVersion = "art",
+            packageLastUpdateTimeMs = 123L,
+            outcome = "OS_ADJUSTED_FILTER", stableOsAdjusted = true
+        )))
+        assertEquals(40L, stepDao.findStableAdjustedOutcome("com.example.app40", "speed", "build", "art", 123L)?.runId)
+        assertNull(stepDao.findStableAdjustedOutcome("com.example.app40", "speed", "build", "art", 124L))
+    }
+
     private fun run(
         runId: Long,
         status: OptimizationRunStatus,

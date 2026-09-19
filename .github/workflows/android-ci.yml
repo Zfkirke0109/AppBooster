@@ -89,8 +89,8 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
-      - name: Run unit tests (runUnitTests)
-        run: ./gradlew --no-daemon runUnitTests
+      - name: Run unit tests, lint, and debug build
+        run: ./gradlew --no-daemon runUnitTests :app:lintDebug :app:assembleDebug :app:compileDebugAndroidTestKotlin
 
       - name: Upload test report
         if: always()

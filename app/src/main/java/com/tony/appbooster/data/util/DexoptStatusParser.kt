@@ -33,6 +33,15 @@ internal object DexoptStatusParser {
         val stableOsAdjusted: Boolean
     )
 
+    private val filterOrder = listOf("extract", "verify", "quicken", "speed-profile", "speed", "everything")
+    private val explicitFilterRegex = Regex(
+        """(?:^|[\s,{\[])(?:actualcompilerfilter|compiler[-_ ]?filter|filter|status)\s*=\s*(speed-profile|everything|speed|verify|quicken|run-from-apk|extract)(?=$|[\s,}\]])""",
+        RegexOption.IGNORE_CASE
+    )
+    private val packageHeaderRegex = Regex("""^(?:Package\s+)?\[([A-Za-z0-9_.]+)](?:\s.*)?$""")
+    private val barePackageRegex = Regex("""^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$""")
+    private val containerRegex = Regex("""DexContainerFileDexoptResult\{[^}]*}""")
+
     private val actualFilterRegex = Regex(
         """actualCompilerFilter\s*=\s*([^,}\s]+)""",
         RegexOption.IGNORE_CASE
@@ -106,46 +115,71 @@ internal object DexoptStatusParser {
      */
     fun parseCompilerFilterFromDexoptDump(packageName: String, dump: String): String? {
         val lines = dump.lineSequence().toList()
-
-        // Prefer the first occurrence of the package name in bracketed form
-        val bracketed = "[$packageName]"
-        val idx = lines.indexOfFirst { it.contains(bracketed) || it.contains(packageName) }
-        if (idx < 0) return null
-
-        val window = lines.subList(idx, minOf(idx + 30, lines.size))
-        for (line in window) {
-            val lower = line.trim().lowercase()
-            parseCompilerFilterFromLine(lower)?.let { return it }
+        val start = lines.indexOfFirst { line -> packageHeader(line.trim()) == packageName }
+        if (start < 0) return null
+        val indent = lines[start].indexOfFirst { !it.isWhitespace() }
+        val filters = mutableListOf<String>()
+        for (line in lines.drop(start + 1)) {
+            if (line.isBlank()) continue
+            val trimmed = line.trim()
+            if (packageHeader(trimmed) != null || line.indexOfFirst { !it.isWhitespace() } <= indent) break
+            if (!isHistoricalResult(trimmed)) {
+                explicitFilterRegex.findAll(trimmed).forEach { filters += it.groupValues[1].normalizeCompilerFilter() }
+            }
         }
-
-        // If we can see the package in a Dexopt state section but no filter lines are provided,
-        // return a marker so callers can treat it differently from "not found".
-        return if (isPackagePresentInDexoptDump(packageName, dump)) "unknown-present" else null
+        return weakestFilter(filters) ?: "unknown-present"
     }
+
+    private fun packageHeader(line: String): String? =
+        packageHeaderRegex.matchEntire(line)?.groupValues?.get(1)
+            ?: line.takeIf { barePackageRegex.matches(it) }
+
+    private fun isHistoricalResult(line: String): Boolean =
+        line.contains("dexopt=", ignoreCase = true) || line.contains("optTimeMs=", ignoreCase = true)
+
+    private fun weakestFilter(filters: List<String>): String? =
+        filters.takeIf { it.isNotEmpty() && it.all(filterOrder::contains) }
+            ?.minByOrNull(filterOrder::indexOf)
 
     /**
      * Parses the strongest compiler-filter signal from verbose compile or package dump output.
      */
     fun parseCompilerFilterFromOutput(output: String): String? {
-        if (output.isBlank()) return null
-
-        output.lineSequence().forEach { line ->
-            parseCompilerFilterFromLine(line.trim().lowercase())?.let { return it }
-        }
-        return null
+        if (output.isBlank() || output.contains("[output truncated by ShellService]")) return null
+        val filters = output.lineSequence()
+            .filterNot(::isHistoricalResult)
+            .mapNotNull { parseCompilerFilterFromLine(it.trim().lowercase()) }
+            .toList()
+        return weakestFilter(filters)
     }
 
-    /** Parses the bounded verbose result returned by modern ART Service. */
+    /** Aggregates all returned containers; a later weaker filter cannot be hidden by the base APK. */
     fun parseArtCompileResult(output: String): ArtCompileResult {
-        fun Regex.value(): String? = find(output)?.groupValues?.getOrNull(1)?.trim()
-            ?.takeIf(String::isNotBlank)
-
+        fun Regex.values(): List<String> = findAll(output).map { it.groupValues[1].trim() }.toList()
+        val containers = containerRegex.findAll(output).map { it.value }.toList()
+        val expectedCount = containers.size.coerceAtLeast(1)
+        val filters = actualFilterRegex.values().map { it.normalizeCompilerFilter() }
+        val statuses = resultStatusRegex.values().map(String::uppercase)
+        val truncated = output.contains("[output truncated by ShellService]")
+        fun sum(regex: Regex): Long? {
+            val values = regex.values().mapNotNull(String::toLongOrNull)
+            if (truncated || values.size != expectedCount) return null
+            return try { values.fold(0L, Math::addExact) } catch (_: ArithmeticException) { null }
+        }
+        val status = when {
+            "FAILED" in statuses -> "FAILED"
+            "CANCELLED" in statuses -> "CANCELLED"
+            "CANCELED" in statuses -> "CANCELED"
+            "PERFORMED" in statuses -> "PERFORMED"
+            statuses.isNotEmpty() && statuses.all { it == "SKIPPED" } -> "SKIPPED"
+            else -> null
+        }
         return ArtCompileResult(
-            actualCompilerFilter = actualFilterRegex.value()?.normalizeCompilerFilter(),
-            status = resultStatusRegex.value()?.uppercase(),
-            finalStatus = finalStatusRegex.value()?.uppercase(),
-            sizeBytes = sizeBytesRegex.value()?.toLongOrNull(),
-            sizeBeforeBytes = sizeBeforeBytesRegex.value()?.toLongOrNull()
+            actualCompilerFilter = if (!truncated && filters.size == expectedCount) weakestFilter(filters) else null,
+            status = status,
+            finalStatus = finalStatusRegex.values().lastOrNull()?.uppercase(),
+            sizeBytes = sum(sizeBytesRegex),
+            sizeBeforeBytes = sum(sizeBeforeBytesRegex)
         )
     }
 
@@ -156,7 +190,7 @@ internal object DexoptStatusParser {
         output: String
     ): ClassifiedCompileResult {
         val art = parseArtCompileResult(output)
-        val skipped = art.finalStatus == "SKIPPED" || art.status == "SKIPPED"
+        val skipped = (art.finalStatus ?: art.status) == "SKIPPED"
         val outcome = when {
             exitCode != 0 -> OptimizationStepOutcome.FAILED_OR_REFUSED
             skipped -> OptimizationStepOutcome.SKIPPED_NOT_APPLICABLE
@@ -200,23 +234,12 @@ internal object DexoptStatusParser {
      * Extracts a compiler filter keyword from a single lowercased line.
      */
     fun parseCompilerFilterFromLine(lowercasedLine: String): String? {
-        val exactAssignment = Regex(
-            """(?:actualcompilerfilter|compiler[-_ ]?filter|filter|status)\s*=\s*(speed-profile|everything|speed|verify|quicken|run-from-apk|extract)"""
-        ).find(lowercasedLine)?.groupValues?.getOrNull(1)
-
-        if (exactAssignment != null) {
-            return if (exactAssignment == "run-from-apk") "extract" else exactAssignment
-        }
-
-        return when {
-            lowercasedLine.contains("speed-profile") -> "speed-profile"
-            lowercasedLine.contains("everything") -> "everything"
-            lowercasedLine.contains("[status=speed]") || (lowercasedLine.contains("speed") && !lowercasedLine.contains("profile")) -> "speed"
-            lowercasedLine.contains("quicken") -> "quicken"
-            lowercasedLine.contains("verify") -> "verify"
-            lowercasedLine.contains("run-from-apk") || lowercasedLine.contains("extract") -> "extract"
-            else -> null
-        }
+        if (isHistoricalResult(lowercasedLine)) return null
+        val line = lowercasedLine.trim()
+        val explicit = explicitFilterRegex.findAll(line)
+            .map { it.groupValues[1].normalizeCompilerFilter() }.toList()
+        if (explicit.isNotEmpty()) return weakestFilter(explicit)
+        return line.normalizeCompilerFilter().takeIf(filterOrder::contains)
     }
 
     private fun String.normalizeCompilerFilter(): String =

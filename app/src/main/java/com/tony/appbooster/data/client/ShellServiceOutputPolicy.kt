@@ -10,7 +10,6 @@ internal object ShellServiceOutputPolicy {
     internal const val MAX_STDOUT_CHARS = 384 * 1024
     internal const val MAX_STDERR_CHARS = 16 * 1024
 
-    private const val MAX_COMPILER_SIGNAL_LINES = 16
     private const val TRUNCATION_MARKER = "[output truncated by ShellService]"
 
     private val compilerFilterSignal = Regex(
@@ -20,23 +19,27 @@ internal object ShellServiceOutputPolicy {
 
     fun readStdout(commandArgs: List<String>, reader: Reader): String {
         return if (isPerPackageDump(commandArgs)) {
-            var compilerSignalCount = 0
+            var inDexoptSection = false
+            var dexoptIndent = 0
             collectBounded(
                 reader = reader,
                 maxChars = MAX_PACKAGE_EVIDENCE_CHARS,
                 includeLine = { line ->
                     val lower = line.trim().lowercase()
+                    if (lower.startsWith("dexopt state:")) {
+                        inDexoptSection = true
+                        dexoptIndent = line.indexOfFirst { !it.isWhitespace() }
+                    } else if (line.isNotBlank() &&
+                        line.indexOfFirst { !it.isWhitespace() } <= dexoptIndent
+                    ) {
+                        inDexoptSection = false
+                    }
                     val isCompilerSignal = compilerFilterSignal.containsMatchIn(lower)
                     when {
-                        isCompilerSignal && compilerSignalCount < MAX_COMPILER_SIGNAL_LINES -> {
-                            compilerSignalCount++
-                            true
-                        }
-                        lower.contains("dexopt state") -> true
-                        lower.contains("actualcompilerfilter") -> true
-                        lower.contains("compiler-filter") -> true
-                        lower.contains("compiler_filter") -> true
-                        lower.contains("compilerfilter") -> true
+                        lower.contains("dexopt=") || lower.contains("opttimems=") -> false
+                        lower.startsWith("dexopt state:") -> true
+                        inDexoptSection && (isCompilerSignal || lower.startsWith("[") ||
+                            lower.startsWith("package [") || lower.startsWith("path:")) -> true
                         lower.startsWith("lastupdatetime=") -> true
                         lower.startsWith("codepath=") -> true
                         lower.startsWith("resourcepath=") -> true
