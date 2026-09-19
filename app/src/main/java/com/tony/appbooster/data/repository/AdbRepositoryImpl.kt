@@ -493,10 +493,13 @@ class AdbRepositoryImpl @Inject constructor(
                     )
                 )
             } else {
-                logger.addLogEntry(LogEntryType.ERROR, messageKey = LogMessageKey.ANALYSIS_FAILED, detail = throwable.message)
+                // Initializer errors often have no message; keep their cause visible.
+                val detail = throwable.cause?.let { "${throwable.javaClass.simpleName}: $it" }
+                    ?: throwable.toString()
+                logger.addLogEntry(LogEntryType.ERROR, messageKey = LogMessageKey.ANALYSIS_FAILED, detail = detail)
                 Resource.Error(
                     ResourceError.LogicError(
-                        errorMessage = "Analysis failed: ${throwable.message}",
+                        errorMessage = "Analysis failed: $detail",
                         errorCode = "ADB_ANALYSIS_FAILED"
                     )
                 )

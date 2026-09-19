@@ -90,6 +90,23 @@ class AdbRepositoryImplTest {
     }
 
     @Test
+    fun `analysis initializer failure exposes cause and resets scan state`() = runTest {
+        val pkg = "com.example.first"
+        coEvery { packageQuery.queryInstalledPackages() } returns listOf(pkg)
+        coEvery { compilationResolver.queryPackageCompilationInfo(pkg, "speed-profile") } throws
+            ExceptionInInitializerError(IllegalArgumentException("Invalid ART pattern"))
+
+        val result = repository.analyzeOptimizationStatus(AppOptimizationType.SPEED_PROFILE)
+
+        assertTrue(result is Resource.Error)
+        assertFalse(repository.optimizationAnalysis.value.isScanning)
+        assertFalse(repository.optimizationAnalysis.value.hasScanned)
+        val detail = repository.logEntries.value.last { it.type == LogEntryType.ERROR }.detail.orEmpty()
+        assertTrue(detail.contains("ExceptionInInitializerError"))
+        assertTrue(detail.contains("Invalid ART pattern"))
+    }
+
+    @Test
     fun `optimization rechecks app updated after an earlier analysis`() = runTest {
         val pkg = "com.example.updated"
         coEvery { packageQuery.queryInstalledPackages() } returns listOf(pkg)

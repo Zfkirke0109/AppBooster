@@ -52,10 +52,15 @@ jobs:
           retention-days: 14
           path: app/build/reports/tests/testDebugUnitTest/**
 
+  android-runtime:
+    name: Android runtime
+    if: github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/android-runtime-tests.yml
+
   signed-release:
     name: Signed release and identity manifest
     if: github.event_name == 'workflow_dispatch'
-    needs: unit-tests
+    needs: [unit-tests, android-runtime]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:

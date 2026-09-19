@@ -75,6 +75,24 @@ app can override Samsung's ART policy, CPU scheduling, SELinux, or Knox.
 
 ## Compatibility and release validation
 
+### 1.7.2 scan regression correction
+
+The 1.7.1 multi-container regex left its literal closing brace unescaped. The
+desktop JDK accepted it, so all host unit tests passed, but Android's ICU engine
+rejects it. Because the regex was a singleton initializer, the first package
+scan failed immediately after the global DEXopt dump, before any filter could
+be parsed. Version 1.7.2 escapes the brace and adds Android instrumented tests
+for this runtime difference, multi-package scanning, and multi-container ART
+results. Failure entries now display their diagnostic detail, and analysis
+errors preserve an initializer's cause even when its own message is null.
+
+Both signed build paths now require instrumented tests on an Android 17 / API 37
+emulator. Compiling the tests or running them on the desktop JDK alone is not
+sufficient. The emulator verifies the Android runtime and UI; it does not replace
+a Samsung One UI / Shizuku check on the phone.
+
+### Platform and device checks
+
 The current project already compiles against SDK 37 and targets SDK 36.
 Running on Android 17 does not require changing target SDK to 37. A target-SDK
 migration should be tested separately against its behavior changes.

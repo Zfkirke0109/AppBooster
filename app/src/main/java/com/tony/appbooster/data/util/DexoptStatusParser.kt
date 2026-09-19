@@ -40,7 +40,9 @@ internal object DexoptStatusParser {
     )
     private val packageHeaderRegex = Regex("""^(?:Package\s+)?\[([A-Za-z0-9_.]+)](?:\s.*)?$""")
     private val barePackageRegex = Regex("""^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$""")
-    private val containerRegex = Regex("""DexContainerFileDexoptResult\{[^}]*}""")
+    // Android's ICU regex engine requires the literal closing brace to be escaped.
+    // An invalid initializer here also breaks scans that only parse package dumps.
+    private val containerRegex = Regex("""DexContainerFileDexoptResult\{[^}]*\}""")
 
     private val actualFilterRegex = Regex(
         """actualCompilerFilter\s*=\s*([^,}\s]+)""",
