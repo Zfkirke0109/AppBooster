@@ -8,6 +8,28 @@ import org.junit.Test
 class ShellServiceOutputPolicyTest {
 
     @Test
+    fun `Samsung history cannot displace current package ART evidence`() {
+        val raw = """
+            Package [com.example.app] (abc):
+              pkgFlags=[ HAS_CODE ]
+              lastUpdateTime=2026-09-17 10:00:00
+            Dexopt state:
+              [com.example.app]
+                path: /data/app/com.example.app/base.apk
+                  arm64: [status=verify] [reason=cmdline]
+            Historical Package Usage:
+              com.other.app, w=1, s=OPTIMIZED, dexopt=PERFORMED, [primaryDex=true, reason=profile-utilization, filter=speed]
+        """.trimIndent()
+        val reduced = ShellServiceOutputPolicy.readStdout(
+            listOf("cmd", "package", "dump", "com.example.app"), StringReader(raw)
+        )
+        assertTrue(reduced.contains("[com.example.app]"))
+        assertTrue(reduced.contains("path: /data/app/com.example.app/base.apk"))
+        assertTrue(reduced.contains("[status=verify]"))
+        assertFalse(reduced.contains("com.other.app"))
+    }
+
+    @Test
     fun `package dump drops unrelated output but preserves ART and overlay evidence`() {
         val noise = "permission state that must not cross Binder\n".repeat(100_000)
         val rawOutput = buildString {
