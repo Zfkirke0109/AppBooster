@@ -22,6 +22,17 @@ class CompilationInfoResolverTest {
     }
 
     @Test
+    fun `confirmed resource overlay remains excluded when no ART filter exists`() = runTest {
+        coEvery { shell.executeCommandDetailed(ShellCommandSpec.DumpsysPackageDexopt) } returns
+            Result.success(ShellCommandResult(0, "Dexopt state:\n  [$pkg]", ""))
+        coEvery { shell.executeCommand(ShellCommandSpec.DumpsysPackageForPackage(pkg)) } returns
+            Result.success("codePath=/product/overlay/Example.apk\npkgFlags=[ SYSTEM ]\noverlayTarget=android")
+        coEvery { shell.executeCommandDetailed(ShellCommandSpec.PackageCompileCheck(pkg)) } returns
+            Result.success(ShellCommandResult(1, "", "Unknown option: --check"))
+        assertFalse(resolver.queryPackageCompilationInfo(pkg, "speed").needsOptimization)
+    }
+
+    @Test
     fun `global filter does not discard package update identity`() = runTest {
         stubState("verify")
         val info = resolver.queryPackageCompilationInfo(pkg, "speed")

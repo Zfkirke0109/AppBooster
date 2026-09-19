@@ -173,7 +173,6 @@ class AppCompilationInfoTest {
             oatFileExists = true
         )
         assertTrue(needs)
-        assertEquals(null, reason)
+        assertNull(reason)
     }
 }
-

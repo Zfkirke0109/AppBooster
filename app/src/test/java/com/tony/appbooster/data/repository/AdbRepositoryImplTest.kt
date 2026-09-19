@@ -90,6 +90,28 @@ class AdbRepositoryImplTest {
     }
 
     @Test
+    fun `optimization rechecks app updated after an earlier analysis`() = runTest {
+        val pkg = "com.example.updated"
+        coEvery { packageQuery.queryInstalledPackages() } returns listOf(pkg)
+        coEvery { optimizationStepDao.findLatestResumableRunId("FULL_DEX2OAT_SPEED", false) } returns null
+        coEvery { optimizationStepDao.findStableAdjustedOutcome(any(), any(), any(), any(), any()) } returns null
+        coEvery { compilationResolver.queryPackageCompilationInfo(pkg, "speed") } returns
+            compilationInfo(pkg, compilerFilter = "speed", needsOptimization = false)
+        assertTrue(repository.analyzeOptimizationStatus(AppOptimizationType.FULL_DEX2OAT_SPEED) is Resource.Success)
+
+        coEvery { compilationResolver.queryPackageCompilationInfo(pkg, "speed") } returns
+            compilationInfo(pkg, compilerFilter = "verify", needsOptimization = true)
+        coEvery { optimizationStepDao.getStepsForRun(any()) } returns
+            listOf(optimizationStep(id = 91L, runId = 901L, stepIndex = 0, packageName = pkg))
+        coEvery { shellDataSource.executeCommandDetailed(match { it is ShellCommandSpec.PackageCompile }) } returns
+            Result.success(ShellCommandResult(0, "Success", ""))
+        stubPackageDump(pkg, "speed")
+
+        assertTrue(repository.executeOptimizationCommand(AppOptimizationType.FULL_DEX2OAT_SPEED, false) is Resource.Success)
+        assertEquals(1, repository.optimizationProgress.value.optimizedSucceededCount)
+    }
+
+    @Test
     fun `full compile verifies every verbose container before unrelated dump state`() = runTest {
         val pkg = "com.example.multidex"
         val step = optimizationStep(id = 90L, runId = 900L, stepIndex = 0, packageName = pkg)

@@ -16,6 +16,39 @@ import org.junit.Test
 class DexoptStatusParserTest {
 
     @Test
+    fun `profile adjustment is not permanent because runtime profiles can change`() {
+        val result = DexoptStatusParser.classifyCompileResult(
+            "speed-profile", 0, "actualCompilerFilter=verify, status=PERFORMED"
+        )
+        assertEquals(OptimizationStepOutcome.OS_ADJUSTED_FILTER, result.outcome)
+        assertFalse(result.stableOsAdjusted)
+    }
+
+    @Test
+    fun `package metadata header cannot hide the later dexopt section`() {
+        val output = """
+            Packages:
+              Package [com.example.app] (1234):
+                pkgFlags=[ HAS_CODE ]
+            Dexopt state:
+              [com.example.app]
+                arm64: [status=speed]
+        """.trimIndent()
+        assertEquals("speed", DexoptStatusParser.parseCompilerFilterFromDexoptDump("com.example.app", output))
+    }
+
+    @Test
+    fun `truncated package section cannot prove all dex filters`() {
+        val output = """
+            Dexopt state:
+              [com.example.app]
+                arm64: [status=speed]
+            [output truncated by ShellService]
+        """.trimIndent()
+        assertEquals("unknown-present", DexoptStatusParser.parseCompilerFilterFromDexoptDump("com.example.app", output))
+    }
+
+    @Test
     fun `speed request adjusted to verify is classified and sized from ART result`() {
         val output = """
             DexContainerFileDexoptResult{actualCompilerFilter=verify, status=PERFORMED, sizeBytes=1884388, sizeBeforeBytes=1999000}
