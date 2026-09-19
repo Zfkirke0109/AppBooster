@@ -115,13 +115,24 @@ internal object DexoptStatusParser {
      */
     fun parseCompilerFilterFromDexoptDump(packageName: String, dump: String): String? {
         val lines = dump.lineSequence().toList()
-        val start = lines.indexOfFirst { line -> packageHeader(line.trim()) == packageName }
-        if (start < 0) return null
+        // Raw package dumps include a metadata header before their ART section.
+        val sectionStart = lines.indexOfFirst { it.trim().startsWith("Dexopt state:", ignoreCase = true) }
+        val sectionIndent = if (sectionStart >= 0) lines[sectionStart].indexOfFirst { !it.isWhitespace() } else -1
+        val sectionEnd = if (sectionStart >= 0) {
+            (sectionStart + 1 until lines.size).firstOrNull { index ->
+                lines[index].isNotBlank() && lines[index].indexOfFirst { !it.isWhitespace() } <= sectionIndent
+            } ?: lines.size
+        } else lines.size
+        val start = (sectionStart + 1 until sectionEnd).firstOrNull { index ->
+            packageHeader(lines[index].trim()) == packageName
+        } ?: return null
         val indent = lines[start].indexOfFirst { !it.isWhitespace() }
         val filters = mutableListOf<String>()
         for (line in lines.drop(start + 1)) {
             if (line.isBlank()) continue
             val trimmed = line.trim()
+            // A missing tail could contain a weaker secondary DEX filter.
+            if (trimmed.contains("[output truncated by ShellService]")) return "unknown-present"
             if (packageHeader(trimmed) != null || line.indexOfFirst { !it.isWhitespace() } <= indent) break
             if (!isHistoricalResult(trimmed)) {
                 explicitFilterRegex.findAll(trimmed).forEach { filters += it.groupValues[1].normalizeCompilerFilter() }
@@ -142,7 +153,7 @@ internal object DexoptStatusParser {
             ?.minByOrNull(filterOrder::indexOf)
 
     /**
-     * Parses the strongest compiler-filter signal from verbose compile or package dump output.
+     * Parses the weakest explicit compiler filter across verbose output lines.
      */
     fun parseCompilerFilterFromOutput(output: String): String? {
         if (output.isBlank() || output.contains("[output truncated by ShellService]")) return null
@@ -202,7 +213,8 @@ internal object DexoptStatusParser {
         return ClassifiedCompileResult(
             outcome = outcome,
             art = art,
-            stableOsAdjusted = outcome == OptimizationStepOutcome.OS_ADJUSTED_FILTER
+            stableOsAdjusted = outcome == OptimizationStepOutcome.OS_ADJUSTED_FILTER &&
+                requestedFilter == "speed"
         )
     }
 
@@ -245,4 +257,3 @@ internal object DexoptStatusParser {
     private fun String.normalizeCompilerFilter(): String =
         lowercase().let { if (it == "run-from-apk") "extract" else it }
 }
-

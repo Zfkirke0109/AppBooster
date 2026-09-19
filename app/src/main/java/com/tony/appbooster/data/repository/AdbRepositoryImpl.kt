@@ -913,8 +913,8 @@ class AdbRepositoryImpl @Inject constructor(
     }
 
     /**
-     * Determines which packages need optimisation, reusing a cached analysis
-     * when valid or performing a fresh one.
+     * Resolves current package evidence for every new run. A prior analysis can
+     * predate app updates, new runtime profiles, or a completed work list.
      *
      * @return Packages that need compilation with separate skip reasons.
      */
@@ -922,27 +922,6 @@ class AdbRepositoryImpl @Inject constructor(
         mode: AppOptimizationType,
         allPackages: List<String>
     ): PackageResolution {
-        val existing = _optimizationAnalysis.value
-        val analysisIsValid = existing.lastScanTimeMs != null &&
-            existing.totalAppsScanned > 0 &&
-            existing.mode == mode
-
-        if (analysisIsValid) {
-            logger.addLog("Using existing analysis from this session")
-            logger.addLogEntry(LogEntryType.INFO, messageKey = LogMessageKey.USING_CACHED_ANALYSIS,
-                detail = "${existing.appsNeedingOptimization} apps")
-            val allowedPackages = allPackages.toSet()
-            val packagesToOptimize = existing.packagesNeedingOptimization
-                .filter { packageName -> packageName in allowedPackages }
-            return PackageResolution(
-                packagesToOptimize = packagesToOptimize,
-                alreadyOptimizedCount = existing.appsAlreadyOptimized,
-                skippedNoProfileCount = existing.appsWithNoProfile,
-                osAdjustedCount = existing.osAdjustedFilterCount,
-                skippedNotApplicableCount = existing.skippedNotApplicableCount
-            )
-        }
-
         logger.addLog("Analyzing optimization status...")
         logger.addLogEntry(LogEntryType.ANALYZING, messageKey = LogMessageKey.ANALYZING_APPS,
             detail = "${allPackages.size} apps")
@@ -1473,7 +1452,9 @@ class AdbRepositoryImpl @Inject constructor(
             filter = actualFilter,
             source = source,
             art = parsedArt.copy(actualCompilerFilter = actualFilter),
-            stableOsAdjusted = outcome == OptimizationStepOutcome.OS_ADJUSTED_FILTER,
+            // Profiles and secondary DEX can change without an APK update.
+            stableOsAdjusted = outcome == OptimizationStepOutcome.OS_ADJUSTED_FILTER &&
+                mode.requestedCompileMode == "speed" && !mode.useFullDexoptScope,
             reason = when {
                 outcome == OptimizationStepOutcome.VERIFIED_REQUESTED_FILTER -> "Verified"
                 outcome == OptimizationStepOutcome.SKIPPED_NOT_APPLICABLE ->
@@ -1711,7 +1692,8 @@ class AdbRepositoryImpl @Inject constructor(
                 requestedFilter = compileMode,
                 androidBuild = runtimeIdentity.androidBuild,
                 artModuleVersion = runtimeIdentity.artModuleVersion,
-                packageLastUpdateTimeMs = info.lastUpdateTimeMs
+                packageLastUpdateTimeMs = info.lastUpdateTimeMs,
+                mode = mode.name
             )
 
             if (cachedAdjusted != null) {

@@ -94,7 +94,7 @@ class AdbRepositoryImplTest {
         val pkg = "com.example.updated"
         coEvery { packageQuery.queryInstalledPackages() } returns listOf(pkg)
         coEvery { optimizationStepDao.findLatestResumableRunId("FULL_DEX2OAT_SPEED", false) } returns null
-        coEvery { optimizationStepDao.findStableAdjustedOutcome(any(), any(), any(), any(), any()) } returns null
+        coEvery { optimizationStepDao.findStableAdjustedOutcome(any(), any(), any(), any(), any(), any()) } returns null
         coEvery { compilationResolver.queryPackageCompilationInfo(pkg, "speed") } returns
             compilationInfo(pkg, compilerFilter = "speed", needsOptimization = false)
         assertTrue(repository.analyzeOptimizationStatus(AppOptimizationType.FULL_DEX2OAT_SPEED) is Resource.Success)

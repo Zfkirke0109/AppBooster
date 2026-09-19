@@ -54,7 +54,18 @@ command whitelist or assumptions about the Android version.
    allowing an unknown/new app version to inherit an older skip decision.
 6. `verify` was treated as proof that no profile exists. It only establishes the
    current compiler filter; profile availability must be left to ART.
-7. CI's Android setup default requested the removed `tools` SDK package and
+7. A session analysis could be reused indefinitely after an app update or after
+   completion emptied its work list. Every new run now resolves current package
+   evidence before selecting work.
+8. Adjusted outcomes could cross modes that share `speed`, and profile-based
+   adjustments were treated as permanent. Cache reuse now requires the same mode;
+   `speed-profile` and full-scope results are not permanent skips because profiles
+   and secondary DEX can evolve without an APK update.
+9. Truncated package evidence could hide a weaker container, and a metadata
+   package header could obscure the later ART section. The parser keeps section
+   boundaries and treats incomplete final blocks as unknown. Confirmed resource
+   overlays retain their exclusion when ART provides no filter.
+10. CI's Android setup default requested the removed `tools` SDK package and
    stopped before any tests. Explicit `platform-tools` setup fixes that failure.
 
 `forceOptimize=false` and command `-f` are distinct existing settings: the former

@@ -93,7 +93,7 @@ class CompilationInfoResolver @Inject constructor(
             ?.substringAfter("=")?.trim()?.let(::parseTimestamp)
 
         fromDexoptDump(packageName, targetFilter, lastUpdateTimeMs)?.let {
-            if (it.compilerFilter != "unknown-present") return it
+            if (it.compilerFilter != "unknown-present" || !it.needsOptimization) return it
         }
 
         fromPackageDumpsys(packageName, targetFilter)?.let { (info, _) ->
@@ -368,4 +368,3 @@ class CompilationInfoResolver @Inject constructor(
         }
     }
 }
-
