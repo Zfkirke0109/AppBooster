@@ -96,6 +96,11 @@ sampling crashes the emulator's `mapper.ranchu` graphics driver before tests
 can run. This setting is confined to CI and does not change the app. Gesture
 navigation and Samsung system UI behavior remain part of the phone check.
 
+Executing the full Android suite also exposed an existing serialization ABI
+mismatch in Room's migration test helper. The app and instrumentation now share
+the kotlinx.serialization 1.8.1 BOM so Room's generated schema serializers see
+the required interface implementation instead of failing with `AbstractMethodError`.
+
 ### Platform and device checks
 
 The current project already compiles against SDK 37 and targets SDK 36.
