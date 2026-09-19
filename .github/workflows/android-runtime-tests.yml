@@ -54,7 +54,8 @@ jobs:
           profile: pixel_2
           ram-size: 4096M
           heap-size: 512M
-          emulator-options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim -camera-back none -camera-front none -accel on -show-kernel
+          # Let current emulators select Lavapipe for modern Vulkan support.
+          emulator-options: -no-window -gpu software -no-snapshot -noaudio -no-boot-anim -camera-back none -camera-front none -accel on -logcat '*:E'
           disable-animations: true
           pre-emulator-launch-script: |
             adb start-server
