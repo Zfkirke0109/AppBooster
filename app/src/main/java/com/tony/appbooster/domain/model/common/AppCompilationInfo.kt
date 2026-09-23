@@ -53,11 +53,10 @@ data class AppCompilationInfo(
         data object SystemApp : SkipReason
 
         /**
-         * App has no runtime profile because the user has never opened it.
+         * No runtime profile was established by explicit profile evidence.
          *
-         * Profile-guided compilation (speed-profile) is pointless without a
-         * profile, so the app is skipped. The user should open the app at
-         * least once and then re-run optimization.
+         * A current `verify` compiler filter alone does not prove this condition.
+         * Retained for historical telemetry and explicit profile checks.
          *
          * @property filter The current compiler filter (typically "verify").
          */
@@ -123,12 +122,6 @@ data class AppCompilationInfo(
             // Case 3: App was updated after last compilation - needs re-optimization
             if (lastUpdateTimeMs != null && lastUpdateTimeMs > lastCompilationTimeMs) {
                 return true to null
-            }
-
-            // Case 3.5: "verify" filter means no runtime profile exists (user never opened the app).
-            // Profile-guided compilation is pointless without a profile; skip for speed-profile mode.
-            if (compilerFilter == "verify" && targetFilter == "speed-profile") {
-                return false to SkipReason.NoProfile(compilerFilter)
             }
 
             // Case 4: Check if already has the target optimization

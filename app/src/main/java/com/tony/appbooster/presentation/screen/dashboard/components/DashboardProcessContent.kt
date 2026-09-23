@@ -1,5 +1,6 @@
 package com.tony.appbooster.presentation.screen.dashboard.components
 
+import android.os.SystemClock
 import androidx.compose.animation.core.EaseOutCubic
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -24,6 +25,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,14 +33,22 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.tony.appbooster.R
+import com.tony.appbooster.presentation.ui.theme.AppBoosterTheme
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 
 /**
  * Unified in-progress card shared by both optimization and analysis phases.
  *
- * All display data is supplied through a single [ProcessProgressState] so the
- * composable contains zero domain logic and zero branching on process type.
+ * Display data is supplied through [ProcessProgressState]. Package elapsed time
+ * updates independently of the progress bar while the screen is visible.
  *
  * @param state Typed state describing the current process – either
  *   [ProcessProgressState.Optimizing] or [ProcessProgressState.Scanning].
@@ -171,5 +181,66 @@ internal fun ProcessProgressContent(
                 }
             }
         }
+        if (state is ProcessProgressState.Optimizing) {
+            CurrentPackageTiming(state)
+        }
+    }
+}
+
+@Composable
+private fun CurrentPackageTiming(state: ProcessProgressState.Optimizing) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val elapsedSeconds by produceState<Long?>(
+        initialValue = null,
+        key1 = lifecycleOwner,
+        key2 = state.runId,
+        key3 = state.currentPackage to state.currentPackageStartedAtElapsedMs
+    ) {
+        value = null
+        if (state.currentPackage.isBlank() || state.currentPackageStartedAtElapsedMs == null) {
+            return@produceState
+        }
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (currentCoroutineContext().isActive) {
+                value = state.currentPackageElapsedSeconds(SystemClock.elapsedRealtime())
+                delay(1_000L)
+            }
+        }
+    }
+    elapsedSeconds?.let { seconds ->
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                text = stringResource(R.string.reliability_package_elapsed, seconds / 60L, seconds % 60L),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (seconds >= LONG_RUNNING_PACKAGE_SECONDS) {
+                Text(
+                    text = stringResource(R.string.reliability_package_long_running),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+private const val LONG_RUNNING_PACKAGE_SECONDS = 15L
+
+@Preview(name = "Long-running package", showBackground = true)
+@Composable
+private fun ProcessProgressContentPreview() {
+    AppBoosterTheme {
+        ProcessProgressContent(
+            state = ProcessProgressState.Optimizing(
+                title = stringResource(R.string.dashboard_optimizing_title),
+                subtitle = "8 / 24 apps",
+                progress = 0.33f,
+                currentPackage = "com.example.heavy",
+                runId = 1L,
+                currentPackageStartedAtElapsedMs = SystemClock.elapsedRealtime() - 75_000L
+            ),
+            onStop = {}
+        )
     }
 }

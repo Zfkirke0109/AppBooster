@@ -16,6 +16,39 @@ import org.junit.Test
 class DexoptStatusParserTest {
 
     @Test
+    fun `profile adjustment is not permanent because runtime profiles can change`() {
+        val result = DexoptStatusParser.classifyCompileResult(
+            "speed-profile", 0, "actualCompilerFilter=verify, status=PERFORMED"
+        )
+        assertEquals(OptimizationStepOutcome.OS_ADJUSTED_FILTER, result.outcome)
+        assertFalse(result.stableOsAdjusted)
+    }
+
+    @Test
+    fun `package metadata header cannot hide the later dexopt section`() {
+        val output = """
+            Packages:
+              Package [com.example.app] (1234):
+                pkgFlags=[ HAS_CODE ]
+            Dexopt state:
+              [com.example.app]
+                arm64: [status=speed]
+        """.trimIndent()
+        assertEquals("speed", DexoptStatusParser.parseCompilerFilterFromDexoptDump("com.example.app", output))
+    }
+
+    @Test
+    fun `truncated package section cannot prove all dex filters`() {
+        val output = """
+            Dexopt state:
+              [com.example.app]
+                arm64: [status=speed]
+            [output truncated by ShellService]
+        """.trimIndent()
+        assertEquals("unknown-present", DexoptStatusParser.parseCompilerFilterFromDexoptDump("com.example.app", output))
+    }
+
+    @Test
     fun `speed request adjusted to verify is classified and sized from ART result`() {
         val output = """
             DexContainerFileDexoptResult{actualCompilerFilter=verify, status=PERFORMED, sizeBytes=1884388, sizeBeforeBytes=1999000}
@@ -90,6 +123,69 @@ class DexoptStatusParserTest {
     @Test
     fun `numeric flags alone are not proof that a package has no code`() {
         assertNull(DexoptStatusParser.parsePackageHasCode("flags=0x0"))
+    }
+
+    @Test
+    fun `package without filter never borrows next packages speed state`() {
+        val dump = """
+            Dexopt state:
+              [com.example.empty]
+              [com.example.next]
+                arm64: [status=speed] [reason=cmdline]
+        """.trimIndent()
+        assertEquals("unknown-present", DexoptStatusParser.parseCompilerFilterFromDexoptDump("com.example.empty", dump))
+    }
+
+    @Test
+    fun `package lookup does not match a package name prefix`() {
+        val dump = """
+            Dexopt state:
+              [com.example.application]
+                arm64: [status=speed]
+        """.trimIndent()
+        assertNull(DexoptStatusParser.parseCompilerFilterFromDexoptDump("com.example.app", dump))
+    }
+
+    @Test
+    fun `permission names and paths are not compiler filters`() {
+        assertNull(DexoptStatusParser.parseCompilerFilterFromOutput("android.permission.PACKAGE_VERIFICATION_AGENT: granted=true"))
+        assertNull(DexoptStatusParser.parseCompilerFilterFromOutput("codePath=/data/app/com.example.speed/base.apk"))
+        assertNull(DexoptStatusParser.parseCompilerFilterFromOutput("compiler-filter=speed-unknown"))
+    }
+
+    @Test
+    fun `Samsung historical optimizer rows do not prove current compiler state`() {
+        val dump = """
+            Dexopt state:
+              [com.example.app]
+            Historical Package Usage:
+              com.example.app, w=1, s=OPTIMIZED, dexopt=PERFORMED, [primaryDex=true, reason=profile-utilization, filter=speed]
+        """.trimIndent()
+        assertEquals("unknown-present", DexoptStatusParser.parseCompilerFilterFromDexoptDump("com.example.app", dump))
+    }
+
+    @Test
+    fun `multiple dex containers require every filter and sum their sizes`() {
+        val output = """
+            DexContainerFileDexoptResult{actualCompilerFilter=speed, status=PERFORMED, sizeBytes=100, sizeBeforeBytes=50}
+            DexContainerFileDexoptResult{actualCompilerFilter=verify, status=PERFORMED, sizeBytes=20, sizeBeforeBytes=10}
+            Final Status: PERFORMED
+        """.trimIndent()
+        val result = DexoptStatusParser.classifyCompileResult("speed", 0, output)
+        assertEquals(OptimizationStepOutcome.OS_ADJUSTED_FILTER, result.outcome)
+        assertEquals("verify", result.art.actualCompilerFilter)
+        assertEquals(120L, result.art.sizeBytes)
+        assertEquals(60L, result.art.sizeBeforeBytes)
+    }
+
+    @Test
+    fun `performed final status is not hidden by a skipped first container`() {
+        val output = """
+            DexContainerFileDexoptResult{actualCompilerFilter=speed, status=SKIPPED, sizeBytes=100, sizeBeforeBytes=100}
+            DexContainerFileDexoptResult{actualCompilerFilter=speed, status=PERFORMED, sizeBytes=20, sizeBeforeBytes=10}
+            Final Status: PERFORMED
+        """.trimIndent()
+        assertEquals(OptimizationStepOutcome.VERIFIED_REQUESTED_FILTER, DexoptStatusParser.classifyCompileResult("speed", 0, output).outcome)
     }
 
     // ── parseCompileCheckNeedsOptimization ───────────────────────────────────

@@ -1,0 +1,14 @@
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
+    <string name="performance_title">Performance</string>
+    <string name="performance_intro">Measure how one app launches before and after DEX compilation. Results come from your phone, not an estimated booster score.</string>
+    <string name="performance_select">Select a test app</string>
+    <string name="performance_protocol">Before → Compile selected app → Cool down → After. Use matching charging, power-saving and network conditions.</string>
+    <string name="performance_before">1. Measure Before</string>
+    <string name="performance_compile">2. Compile selected app</string>
+    <string name="performance_after">3. Measure After</string>
+    <string name="performance_stop">Stop after current command</string>
+    <string name="performance_stop_detail">Stopping prevents further launches. The active Android command must return before cleanup completes.</string>
+    <string name="performance_export">Export measurement JSON</string>
+    <string name="performance_caveat">This is an observed before/after comparison, not proof that compilation alone caused a change. Cache warming, profiles, background work and network content can affect launch time. Five samples are a small diagnostic capture.</string>
+    <string name="performance_definitions">dex2oat compiles Android DEX bytecode ahead of time into ART-managed artifacts. A successful compile does not guarantee a faster app.\n\nLaunch median: the middle of five Android TotalTime readings, in milliseconds. Lower is shorter. Range: the fastest and slowest samples; all samples are retained.\n\nProcess-cold: Android closes the app process before launch. Filesystem caches and ART profiles are not erased. The first displayed frame may be a splash screen.\n\nCompilation duration: time spent running the compile command. ART storage: reported compiled-artifact bytes, separate from overall free space.\n\nBattery temperature and Android thermal status describe test conditions. This test does not measure battery savings, RAM reduction, FPS or CPU speed.</string>
+</resources>

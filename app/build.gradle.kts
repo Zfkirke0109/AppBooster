@@ -38,7 +38,7 @@ android {
         // Bump these three values for each release; versionCode is derived automatically.
         val major = 1
         val minor = 7
-        val patch = 0
+        val patch = 4
         versionCode = major * 10000 + minor * 100 + patch   // e.g. 1.2.3 → 10203
         versionName = "$major.$minor.$patch"
 
@@ -97,6 +97,10 @@ ksp {
 }
 
 dependencies {
+    // Room 2.8.4's migration serializers require the 1.8+ runtime ABI. Align the
+    // app and instrumentation APKs so the app cannot supply an older interface.
+    implementation(platform(libs.kotlinx.serialization.bom))
+    androidTestImplementation(platform(libs.kotlinx.serialization.bom))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)

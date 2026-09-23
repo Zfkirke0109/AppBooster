@@ -140,8 +140,8 @@ class AppCompilationInfoTest {
     }
 
     @Test
-    fun `given verify filter with speed-profile target when shouldOptimize then returns false (no profile)`() {
-        assertFalse(
+    fun `given verify filter with speed-profile target when shouldOptimize then remains eligible without profile evidence`() {
+        assertTrue(
             AppCompilationInfo.shouldOptimize(
                 compilerFilter = "verify",
                 lastCompilationTimeMs = now - 1_000L,
@@ -164,7 +164,7 @@ class AppCompilationInfoTest {
     }
 
     @Test
-    fun `given verify filter with speed-profile target when evaluateOptimization then skip with NoProfile reason`() {
+    fun `given verify filter with speed-profile target when evaluateOptimization then stays eligible until ART is consulted`() {
         val (needs, reason) = AppCompilationInfo.evaluateOptimization(
             compilerFilter = "verify",
             lastCompilationTimeMs = now - 1_000L,
@@ -172,8 +172,7 @@ class AppCompilationInfoTest {
             targetFilter = "speed-profile",
             oatFileExists = true
         )
-        assertFalse(needs)
-        assertTrue(reason is AppCompilationInfo.SkipReason.NoProfile)
+        assertTrue(needs)
+        assertNull(reason)
     }
 }
-

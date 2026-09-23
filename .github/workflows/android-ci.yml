@@ -80,6 +80,8 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        with:
+          packages: platform-tools
 
       - name: Install SDK packages
         run: sdkmanager "platform-tools" "platforms;android-37.0" "build-tools;37.0.0"
@@ -87,8 +89,8 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
-      - name: Run unit tests (runUnitTests)
-        run: ./gradlew --no-daemon runUnitTests
+      - name: Run unit tests, lint, and debug build
+        run: ./gradlew --no-daemon runUnitTests :app:lintDebug :app:assembleDebug :app:compileDebugAndroidTestKotlin
 
       - name: Upload test report
         if: always()
@@ -101,10 +103,15 @@ jobs:
   # ───────────────────────────────────────────────────────────────
   # 3. Signed release build  –  pushes to mainline branches and v* tags
   # ───────────────────────────────────────────────────────────────
+  android-runtime:
+    name: Android runtime
+    needs: secret-scan
+    uses: ./.github/workflows/android-runtime-tests.yml
+
   signed-release:
     name: Signed release build
     runs-on: ubuntu-latest
-    needs: [secret-scan, unit-tests]
+    needs: [secret-scan, unit-tests, android-runtime]
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')))
     timeout-minutes: 45
 
@@ -127,6 +134,8 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        with:
+          packages: platform-tools
 
       - name: Install SDK packages
         run: sdkmanager "platform-tools" "platforms;android-37.0" "build-tools;37.0.0"
@@ -282,4 +291,3 @@ jobs:
             --notes-file "$notes_file" \
             --target "${{ github.sha }}" \
             $files
-

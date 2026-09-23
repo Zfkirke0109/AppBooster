@@ -25,6 +25,7 @@ import com.tony.appbooster.domain.model.common.Resource
 import com.tony.appbooster.domain.model.common.ResourceError
 import com.tony.appbooster.domain.model.common.ShellCommandException
 import com.tony.appbooster.domain.model.common.ShellCommandSpec
+import com.tony.appbooster.domain.model.common.ShellConnectionException
 import com.tony.appbooster.domain.model.common.requireSuccess
 import com.tony.appbooster.domain.model.device.blockingSummary
 import com.tony.appbooster.domain.model.settings.AppOptimizationType
@@ -73,7 +74,8 @@ class AdbRepositoryImpl @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val telemetryRepository: OptimizationTelemetryRepository,
     private val storageCapacityProvider: StorageCapacityProvider,
-    private val telemetryExporter: TelemetryExporter
+    private val telemetryExporter: TelemetryExporter,
+    private val operationCoordinator: com.tony.appbooster.domain.service.ShellOperationCoordinator = com.tony.appbooster.domain.service.ShellOperationCoordinator()
 ) : AdbRepository {
 
     companion object {
@@ -238,10 +240,15 @@ class AdbRepositoryImpl @Inject constructor(
      * @return [Resource.Success] when the flow completes,
      *         or [Resource.Error] describing the failure.
      */
-    override suspend fun executeOptimizationCommand(
-        mode: AppOptimizationType,
-        forceOptimize: Boolean
-    ): Resource<Unit> {
+    override suspend fun executeOptimizationCommand(mode: AppOptimizationType, forceOptimize: Boolean): Resource<Unit> = try {
+        operationCoordinator.exclusive { executeOptimizationCommandExclusive(mode, forceOptimize) }
+    } catch (cancel: CancellationException) {
+        throw cancel
+    } catch (error: Exception) {
+        Resource.Error(ResourceError.LogicError(errorMessage = error.message))
+    }
+
+    private suspend fun executeOptimizationCommandExclusive(mode: AppOptimizationType, forceOptimize: Boolean): Resource<Unit> {
         val compileMode = mode.requestedCompileMode
         val modeKey = mode.value
         val requestedRunId = System.currentTimeMillis()
@@ -358,8 +365,8 @@ class AdbRepositoryImpl @Inject constructor(
             onFailure = { throwable ->
                 if (throwable is CancellationException || wasCancelled()) {
                     // The Stop flow sets repository cancellation first, then
-                    // cancels WorkManager, which aborts the in-flight shell
-                    // command with a CancellationException. That exception (or
+                    // cancels WorkManager. The synchronous shell command may
+                    // finish before cancellation is observed. That exception (or
                     // any other error racing a requested cancel) must end the
                     // run as Canceled — never as Failed.
                     if (_optimizationProgress.value.result !is OptimizationResult.Canceled) {
@@ -446,9 +453,15 @@ class AdbRepositoryImpl @Inject constructor(
      * @param mode The optimisation mode to analyse against.
      * @return [Resource] with [OptimizationAnalysis] results.
      */
-    override suspend fun analyzeOptimizationStatus(
-        mode: AppOptimizationType
-    ): Resource<OptimizationAnalysis> = runCatching {
+    override suspend fun analyzeOptimizationStatus(mode: AppOptimizationType): Resource<OptimizationAnalysis> = try {
+        operationCoordinator.exclusive { analyzeOptimizationStatusExclusive(mode) }
+    } catch (cancel: CancellationException) {
+        throw cancel
+    } catch (error: Exception) {
+        Resource.Error(ResourceError.LogicError(errorMessage = error.message))
+    }
+
+    private suspend fun analyzeOptimizationStatusExclusive(mode: AppOptimizationType): Resource<OptimizationAnalysis> = runCatching {
         analysisCancelRequested.set(false)
         logger.clearLogEntries()
         compilationResolver.resetCaches()
@@ -493,10 +506,13 @@ class AdbRepositoryImpl @Inject constructor(
                     )
                 )
             } else {
-                logger.addLogEntry(LogEntryType.ERROR, messageKey = LogMessageKey.ANALYSIS_FAILED, detail = throwable.message)
+                // Initializer errors often have no message; keep their cause visible.
+                val detail = throwable.cause?.let { "${throwable.javaClass.simpleName}: $it" }
+                    ?: throwable.toString()
+                logger.addLogEntry(LogEntryType.ERROR, messageKey = LogMessageKey.ANALYSIS_FAILED, detail = detail)
                 Resource.Error(
                     ResourceError.LogicError(
-                        errorMessage = "Analysis failed: ${throwable.message}",
+                        errorMessage = "Analysis failed: $detail",
                         errorCode = "ADB_ANALYSIS_FAILED"
                     )
                 )
@@ -522,7 +538,15 @@ class AdbRepositoryImpl @Inject constructor(
         onFailure = { Resource.Error(ResourceError.LogicError(it.message)) }
     )
 
-    override suspend fun rollbackOptimization(packageName: String): Resource<Unit> = runCatching {
+    override suspend fun rollbackOptimization(packageName: String): Resource<Unit> = try {
+        operationCoordinator.exclusive { rollbackOptimizationExclusive(packageName) }
+    } catch (cancel: CancellationException) {
+        throw cancel
+    } catch (error: Exception) {
+        Resource.Error(ResourceError.LogicError(errorMessage = error.message))
+    }
+
+    private suspend fun rollbackOptimizationExclusive(packageName: String): Resource<Unit> = runCatching {
         PackageNameValidator.requireValid(packageName)
         when (val connected = ensureConnected()) {
             is Resource.Success -> Unit
@@ -725,11 +749,20 @@ class AdbRepositoryImpl @Inject constructor(
     ): OptimizationRunPlan? {
         val runId = optimizationStepDao.findLatestResumableRunId(compileMode, forceOptimize)
             ?: return null
-        val steps = optimizationStepDao.prepareResumedRun(runId, System.currentTimeMillis())
+        // Read first: rejected plans remain intact as historical evidence.
+        val steps = optimizationStepDao.getStepsForRun(runId)
         if (steps.isEmpty()) return null
 
         val skippedCount = steps.firstOrNull()?.skippedCount ?: 0
         val existingTelemetry = telemetryRepository.getRun(runId)
+        if (!ResumeIdentityPolicy.canReusePlan(
+                steps = steps,
+                telemetry = existingTelemetry,
+                currentAndroidBuild = runtimeIdentity.androidBuild,
+                currentArtModuleVersion = runtimeIdentity.artModuleVersion
+            )
+        ) return null
+
         val classifiedOptimizedCount = steps.count {
             outcomeForStep(it) ==
                 OptimizationStepOutcome.VERIFIED_REQUESTED_FILTER
@@ -750,8 +783,39 @@ class AdbRepositoryImpl @Inject constructor(
             outcomeForStep(it) ==
                 OptimizationStepOutcome.VERIFICATION_UNAVAILABLE
         }
-        // Persisted progress also includes packages classified before compile-step creation.
-        // Keep the larger value so a resumed run cannot lose those terminal categories.
+        val classifiedProcessedCount = classifiedOptimizedCount + classifiedFailedCount +
+            classifiedOsAdjustedCount + classifiedSkippedNotApplicableCount +
+            classifiedVerificationUnavailableCount
+        // Aggregate-only results cannot be checked against current package identities.
+        if (existingTelemetry != null && (
+                existingTelemetry.optimizedSucceededCount > classifiedOptimizedCount ||
+                    existingTelemetry.failedOrRefusedCount > classifiedFailedCount ||
+                    existingTelemetry.osAdjustedFilterCount > classifiedOsAdjustedCount ||
+                    existingTelemetry.skippedNotApplicableCount > classifiedSkippedNotApplicableCount ||
+                    existingTelemetry.verificationUnavailableCount > classifiedVerificationUnavailableCount ||
+                    existingTelemetry.processedCount > classifiedProcessedCount
+                )
+        ) return null
+
+        val requestedFilter = AppOptimizationType.fromStoredValue(compileMode)?.requestedCompileMode
+            ?: return null
+        compilationResolver.resetCaches()
+        for (step in steps) {
+            if (step.outcome == null && outcomeForStep(step) == null) continue
+            if (step.packageLastUpdateTimeMs == null || step.packageLastUpdateTimeMs <= 0L) return null
+            val currentUpdateTimeMs = compilationResolver
+                .queryPackageCompilationInfo(step.packageName, requestedFilter)
+                .lastUpdateTimeMs
+            if (!ResumeIdentityPolicy.hasSamePackageIdentity(
+                    step.packageLastUpdateTimeMs,
+                    currentUpdateTimeMs
+                )
+            ) return null
+        }
+
+        val resumedSteps = optimizationStepDao.prepareResumedRun(runId, System.currentTimeMillis())
+        if (resumedSteps.isEmpty()) return null
+        // A crash may leave telemetry behind the validated step records.
         val optimizedCount = maxOf(
             classifiedOptimizedCount,
             existingTelemetry?.optimizedSucceededCount ?: 0
@@ -770,15 +834,12 @@ class AdbRepositoryImpl @Inject constructor(
             existingTelemetry?.verificationUnavailableCount ?: 0
         )
         val unverifiedCount = osAdjustedCount + verificationUnavailableCount
-        val classifiedProcessedCount = classifiedOptimizedCount + classifiedFailedCount +
-            classifiedOsAdjustedCount + classifiedSkippedNotApplicableCount +
-            classifiedVerificationUnavailableCount
         val processedCount = maxOf(classifiedProcessedCount, existingTelemetry?.processedCount ?: 0)
 
         return OptimizationRunPlan(
             runId = runId,
-            steps = steps,
-            totalCount = steps.size,
+            steps = resumedSteps,
+            totalCount = resumedSteps.size,
             skippedCount = skippedCount,
             alreadyOptimizedCount = existingTelemetry?.alreadyOptimizedCount ?: skippedCount,
             skippedNoProfileCount = existingTelemetry?.skippedNoProfileCount ?: 0,
@@ -913,8 +974,8 @@ class AdbRepositoryImpl @Inject constructor(
     }
 
     /**
-     * Determines which packages need optimisation, reusing a cached analysis
-     * when valid or performing a fresh one.
+     * Resolves current package evidence for every new run. A prior analysis can
+     * predate app updates, new runtime profiles, or a completed work list.
      *
      * @return Packages that need compilation with separate skip reasons.
      */
@@ -922,27 +983,6 @@ class AdbRepositoryImpl @Inject constructor(
         mode: AppOptimizationType,
         allPackages: List<String>
     ): PackageResolution {
-        val existing = _optimizationAnalysis.value
-        val analysisIsValid = existing.lastScanTimeMs != null &&
-            existing.totalAppsScanned > 0 &&
-            existing.mode == mode
-
-        if (analysisIsValid) {
-            logger.addLog("Using existing analysis from this session")
-            logger.addLogEntry(LogEntryType.INFO, messageKey = LogMessageKey.USING_CACHED_ANALYSIS,
-                detail = "${existing.appsNeedingOptimization} apps")
-            val allowedPackages = allPackages.toSet()
-            val packagesToOptimize = existing.packagesNeedingOptimization
-                .filter { packageName -> packageName in allowedPackages }
-            return PackageResolution(
-                packagesToOptimize = packagesToOptimize,
-                alreadyOptimizedCount = existing.appsAlreadyOptimized,
-                skippedNoProfileCount = existing.appsWithNoProfile,
-                osAdjustedCount = existing.osAdjustedFilterCount,
-                skippedNotApplicableCount = existing.skippedNotApplicableCount
-            )
-        }
-
         logger.addLog("Analyzing optimization status...")
         logger.addLogEntry(LogEntryType.ANALYZING, messageKey = LogMessageKey.ANALYZING_APPS,
             detail = "${allPackages.size} apps")
@@ -1028,17 +1068,14 @@ class AdbRepositoryImpl @Inject constructor(
     }
 
     /**
-     * Iterates over [packages] and compiles each one, checking for
+     * Iterates over [plan] and compiles each package, checking for
      * cancellation between iterations.
      *
      * A failure compiling a single package (e.g. a Samsung/Knox-protected
-     * system package that rejects `cmd package compile`, or a transient
-     * Shizuku/Binder error) no longer aborts the entire run. Each package is
-     * compiled independently: failures are recorded against that step only,
-     * and the loop continues so every remaining package is still located and
-     * processed. This ensures "optimize all apps" reliably reaches every
-     * installed package instead of silently stopping partway through on
-     * devices with many OEM/Knox packages that may not all be compilable.
+     * system package that rejects `cmd package compile`) is recorded against
+     * that step, and the loop continues. Loss of Shizuku access pauses the
+     * run so the interrupted and remaining packages can be retried after
+     * access is restored.
      */
     private suspend fun compilePackages(
         plan: OptimizationRunPlan,
@@ -1075,7 +1112,8 @@ class AdbRepositoryImpl @Inject constructor(
 
             val packageName = step.packageName
             _optimizationProgress.value = _optimizationProgress.value.copy(
-                currentAppPackage = packageName
+                currentAppPackage = packageName,
+                currentPackageStartedAtElapsedMs = SystemClock.elapsedRealtime()
             )
             logger.addLogEntry(LogEntryType.OPTIMIZING, messageKey = LogMessageKey.OPTIMIZING_APP, packageName = packageName)
 
@@ -1189,6 +1227,13 @@ class AdbRepositoryImpl @Inject constructor(
                 // That is not a package failure — rethrow so the run-level
                 // handler records the Canceled outcome.
                 if (throwable is CancellationException) throw throwable
+                if (throwable is ShellConnectionException) {
+                    val message = throwable.message ?: "Shizuku shell access is unavailable."
+                    _connectionState.value = AdbConnectionState.Error(message)
+                    // Keep this step RUNNING and later steps PENDING. Resume
+                    // resets interrupted steps after shell access is restored.
+                    throw OptimizationPausedException(message)
+                }
                 recordStepFailure(step.id, packageName, throwable)
                 recordOutcome(
                     step = step,
@@ -1427,17 +1472,19 @@ class AdbRepositoryImpl @Inject constructor(
     ): PackageCompileVerification {
         val combinedOutput = "${commandResult.stdout}\n${commandResult.stderr}"
         val parsedArt = DexoptStatusParser.parseArtCompileResult(combinedOutput)
+        val hasContainerEvidence = combinedOutput.contains("DexContainerFileDexoptResult{")
         val verboseFilter = parsedArt.actualCompilerFilter
-            ?: DexoptStatusParser.parseCompilerFilterFromOutput(combinedOutput)
+            ?: if (!hasContainerEvidence) DexoptStatusParser.parseCompilerFilterFromOutput(combinedOutput) else null
 
-        val dumpFilter = runCatching {
+        val dumpFilter = if (verboseFilter == null && !hasContainerEvidence) runCatching {
             shellDataSource.executeCommandDetailed(ShellCommandSpec.PackageDump(packageName))
                 .getOrNull()
                 ?.takeIf { it.isSuccess }
-                ?.let { result -> DexoptStatusParser.parseCompilerFilterFromOutput(result.stdout) }
-        }.getOrNull()
+                ?.let { result -> DexoptStatusParser.parseCompilerFilterFromDexoptDump(packageName, result.stdout) }
+                ?.takeUnless { it == "unknown-present" }
+        }.getOrNull() else null
 
-        val resolverFilter = if (dumpFilter == null && verboseFilter == null) {
+        val resolverFilter = if (dumpFilter == null && verboseFilter == null && !hasContainerEvidence) {
             // Package state changed after compilation. Refresh resolver caches only
             // when direct package/verbose evidence could not verify the result.
             compilationResolver.resetCaches()
@@ -1448,8 +1495,8 @@ class AdbRepositoryImpl @Inject constructor(
             null
         }
 
-        val actualFilter = dumpFilter ?: verboseFilter ?: resolverFilter
-        val skipped = parsedArt.finalStatus == "SKIPPED" || parsedArt.status == "SKIPPED"
+        val actualFilter = verboseFilter ?: dumpFilter ?: resolverFilter
+        val skipped = (parsedArt.finalStatus ?: parsedArt.status) == "SKIPPED"
         val outcome = when {
             skipped -> OptimizationStepOutcome.SKIPPED_NOT_APPLICABLE
             actualFilter == null -> OptimizationStepOutcome.VERIFICATION_UNAVAILABLE
@@ -1460,8 +1507,8 @@ class AdbRepositoryImpl @Inject constructor(
             else -> OptimizationStepOutcome.OS_ADJUSTED_FILTER
         }
         val source = when {
-            dumpFilter != null -> VERIFICATION_SOURCE_PACKAGE_DUMP
             verboseFilter != null -> VERIFICATION_SOURCE_VERBOSE_OUTPUT
+            dumpFilter != null -> VERIFICATION_SOURCE_PACKAGE_DUMP
             resolverFilter != null -> VERIFICATION_SOURCE_RESOLVER
             else -> VERIFICATION_SOURCE_UNAVAILABLE
         }
@@ -1471,7 +1518,9 @@ class AdbRepositoryImpl @Inject constructor(
             filter = actualFilter,
             source = source,
             art = parsedArt.copy(actualCompilerFilter = actualFilter),
-            stableOsAdjusted = outcome == OptimizationStepOutcome.OS_ADJUSTED_FILTER,
+            // Profiles and secondary DEX can change without an APK update.
+            stableOsAdjusted = outcome == OptimizationStepOutcome.OS_ADJUSTED_FILTER &&
+                mode.requestedCompileMode == "speed" && !mode.useFullDexoptScope,
             reason = when {
                 outcome == OptimizationStepOutcome.VERIFIED_REQUESTED_FILTER -> "Verified"
                 outcome == OptimizationStepOutcome.SKIPPED_NOT_APPLICABLE ->
@@ -1709,7 +1758,8 @@ class AdbRepositoryImpl @Inject constructor(
                 requestedFilter = compileMode,
                 androidBuild = runtimeIdentity.androidBuild,
                 artModuleVersion = runtimeIdentity.artModuleVersion,
-                packageLastUpdateTimeMs = info.lastUpdateTimeMs
+                packageLastUpdateTimeMs = info.lastUpdateTimeMs,
+                mode = mode.name
             )
 
             if (cachedAdjusted != null) {

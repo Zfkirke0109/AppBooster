@@ -34,14 +34,15 @@ interface OptimizationStepDao {
         SELECT * FROM optimization_steps
         WHERE packageName = :packageName
           AND requestedFilter = :requestedFilter
+          AND requestedFilter = 'speed'
+          AND mode = :mode
+          AND mode != 'ADVANCED_FULL_COMPILE'
           AND android_build = :androidBuild
           AND art_module_version = :artModuleVersion
           AND stableOsAdjusted = 1
           AND outcome = 'OS_ADJUSTED_FILTER'
-          AND (
-              packageLastUpdateTimeMs = :packageLastUpdateTimeMs OR
-              (packageLastUpdateTimeMs IS NULL AND :packageLastUpdateTimeMs IS NULL)
-          )
+          AND :packageLastUpdateTimeMs IS NOT NULL
+          AND packageLastUpdateTimeMs = :packageLastUpdateTimeMs
         ORDER BY updatedAtMs DESC
         LIMIT 1
         """
@@ -51,7 +52,8 @@ interface OptimizationStepDao {
         requestedFilter: String,
         androidBuild: String,
         artModuleVersion: String,
-        packageLastUpdateTimeMs: Long?
+        packageLastUpdateTimeMs: Long?,
+        mode: String
     ): OptimizationStepEntity?
 
     @Query(

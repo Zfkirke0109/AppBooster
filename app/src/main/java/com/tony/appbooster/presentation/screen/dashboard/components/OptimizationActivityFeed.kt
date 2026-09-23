@@ -318,6 +318,15 @@ private fun ActivityLogItem(entry: OptimizationLogEntry) {
                     overflow = TextOverflow.Ellipsis
                 )
             }
+            if (entry.type == LogEntryType.ERROR && !entry.detail.isNullOrBlank()) {
+                Text(
+                    text = entry.detail,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
 
         // Success indicator for optimized apps
@@ -407,4 +416,3 @@ private fun resolveLogEntryStyle(type: LogEntryType): LogEntryStyle {
     }
     return LogEntryStyle(icon = icon, color = color, backgroundColor = color.copy(alpha = 0.1f))
 }
-

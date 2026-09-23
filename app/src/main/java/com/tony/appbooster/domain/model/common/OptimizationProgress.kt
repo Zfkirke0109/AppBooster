@@ -14,9 +14,12 @@ package com.tony.appbooster.domain.model.common
  * @property isRunning Whether optimization is currently in progress.
  * @property result Final result of the most recent run.
  * @property currentAppPackage The package name of the app currently being optimized.
+ * @property currentPackageStartedAtElapsedMs Monotonic time when work on the current package began.
+ * Null before a package is selected; never persisted across device boots.
  * @property progress Progress value from 0.0 to 1.0.
- * @property processedCount Number of target packages processed for progress.
- * @property skippedCount Number of apps skipped before compile (already optimized or no profile).
+ * @property processedCount Compile targets that reached an outcome, including unsuccessful attempts.
+ * @property skippedCount Aggregate pre-compile skips, including already matching, no-profile,
+ * and classified ART outcomes. Exact matching counts must use [alreadyOptimizedCount].
  * @property optimizedSucceededCount Number of target packages verified after compile.
  * @property alreadyOptimizedCount Number of target packages skipped because they already matched.
  * @property skippedNoProfileCount Number of speed-profile targets skipped because no runtime profile exists.
@@ -25,7 +28,7 @@ package com.tony.appbooster.domain.model.common
  * @property osAdjustedFilterCount Number of packages where ART applied a different filter.
  * @property skippedNotApplicableCount Number of packages ART reported as not applicable.
  * @property verificationUnavailableCount Number of packages lacking post-run ART evidence.
- * @property totalCount Total number of apps to optimize.
+ * @property totalCount Total compile targets, excluding packages skipped during initial analysis.
  */
 data class OptimizationProgress(
     val runId: Long = 0L,
@@ -43,7 +46,8 @@ data class OptimizationProgress(
     val osAdjustedFilterCount: Int = 0,
     val skippedNotApplicableCount: Int = 0,
     val verificationUnavailableCount: Int = 0,
-    val totalCount: Int = 0
+    val totalCount: Int = 0,
+    val currentPackageStartedAtElapsedMs: Long? = null
 )
 
 /**

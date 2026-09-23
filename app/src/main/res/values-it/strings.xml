@@ -265,4 +265,12 @@
     <string name="telemetry_export_pending">L’esecuzione finale verrà esportata automaticamente.</string>
     <string name="telemetry_retry_export">Esporta di nuovo l’ultima</string>
     <string name="telemetry_exporting">Esportazione…</string>
+    <string name="reliability_preparing_title">Preparazione dell’ottimizzazione</string>
+    <string name="reliability_preparing_subtitle">Analisi delle app installate e preparazione del piano di compilazione</string>
+    <string name="reliability_package_elapsed">Elaborazione di questa app · %1$d:%2$02d trascorsi</string>
+    <string name="reliability_package_long_running">In attesa che Android completi questa app. Alcuni pacchetti richiedono diversi minuti.</string>
+    <string name="reliability_android_adjusted_title">Completato — Adattato da Android</string>
+    <string name="reliability_android_adjusted_subtitle">Android ha scelto un filtro diverso per %1$d app senza errori del comando. Queste sono separate dalle app verificate con il filtro %2$s richiesto.</string>
+    <string name="reliability_matching_filter">Filtro richiesto corrispondente (%1$s)</string>
+    <string name="reliability_not_processed">Non elaborate</string>
 </resources>

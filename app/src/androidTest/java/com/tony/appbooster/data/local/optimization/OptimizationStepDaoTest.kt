@@ -64,6 +64,41 @@ class OptimizationStepDaoTest {
         assertEquals(30L, stepDao.findLatestResumableRunId(MODE, false))
     }
 
+    @Test
+    fun unknownPackageVersionCannotReuseAdjustedOutcome() = runBlocking {
+        stepDao.insertAll(listOf(step(40L, 100L).copy(
+            mode = "FULL_DEX2OAT_SPEED", requestedFilter = "speed", androidBuild = "build", artModuleVersion = "art",
+            outcome = "OS_ADJUSTED_FILTER", stableOsAdjusted = true
+        )))
+        assertNull(stepDao.findStableAdjustedOutcome("com.example.app40", "speed", "build", "art", null, "FULL_DEX2OAT_SPEED"))
+    }
+
+    @Test
+    fun adjustedOutcomeRequiresMatchingKnownPackageVersion() = runBlocking {
+        stepDao.insertAll(listOf(step(40L, 100L).copy(
+            mode = "FULL_DEX2OAT_SPEED", requestedFilter = "speed", androidBuild = "build", artModuleVersion = "art",
+            packageLastUpdateTimeMs = 123L,
+            outcome = "OS_ADJUSTED_FILTER", stableOsAdjusted = true
+        )))
+        assertEquals(40L, stepDao.findStableAdjustedOutcome("com.example.app40", "speed", "build", "art", 123L, "FULL_DEX2OAT_SPEED")?.runId)
+        assertNull(stepDao.findStableAdjustedOutcome("com.example.app40", "speed", "build", "art", 124L, "FULL_DEX2OAT_SPEED"))
+    }
+
+    @Test
+    fun adjustedOutcomeCannotCrossModeOrCacheMutableProfilesAndSecondaryDex() = runBlocking {
+        val adjusted = step(40L, 100L).copy(
+            mode = "FULL_DEX2OAT_SPEED", requestedFilter = "speed",
+            androidBuild = "build", artModuleVersion = "art", packageLastUpdateTimeMs = 123L,
+            outcome = "OS_ADJUSTED_FILTER", stableOsAdjusted = true
+        )
+        stepDao.insertAll(listOf(adjusted))
+        assertNull(stepDao.findStableAdjustedOutcome("com.example.app40", "speed", "build", "art", 123L, "ADVANCED_FULL_COMPILE"))
+        stepDao.insertAll(listOf(adjusted.copy(mode = "ADVANCED_FULL_COMPILE")))
+        assertNull(stepDao.findStableAdjustedOutcome("com.example.app40", "speed", "build", "art", 123L, "ADVANCED_FULL_COMPILE"))
+        stepDao.insertAll(listOf(adjusted.copy(mode = "SPEED_PROFILE", requestedFilter = "speed-profile")))
+        assertNull(stepDao.findStableAdjustedOutcome("com.example.app40", "speed-profile", "build", "art", 123L, "SPEED_PROFILE"))
+    }
+
     private fun run(
         runId: Long,
         status: OptimizationRunStatus,
