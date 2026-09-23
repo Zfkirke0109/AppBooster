@@ -45,7 +45,13 @@ class ShellService : IShellService.Stub() {
 
             outputReaderThread.start()
             errorReaderThread.start()
-            val exitCode = process.waitFor()
+            // A stuck launch must not block every later Shizuku command indefinitely.
+            val isMeasurement = commandArgs.take(2) == listOf("am", "start")
+            val exitCode = if (isMeasurement && !process.waitFor(60, java.util.concurrent.TimeUnit.SECONDS)) {
+                process.destroyForcibly()
+                process.waitFor()
+                124
+            } else process.waitFor()
             outputReaderThread.join()
             errorReaderThread.join()
             process.destroy()

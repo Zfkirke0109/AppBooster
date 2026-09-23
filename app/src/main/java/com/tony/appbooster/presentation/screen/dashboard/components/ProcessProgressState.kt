@@ -29,13 +29,29 @@ sealed interface ProcessProgressState {
      * @property subtitle Fractional count label, e.g. "12 / 45 apps".
      * @property progress Fractional progress from 0f to 1f.
      * @property currentPackage Package currently being compiled.
+     * @property runId Identity used to reset UI timing for each run.
+     * @property currentPackageStartedAtElapsedMs Monotonic package start, retained outside the UI lifecycle.
      */
     data class Optimizing(
         override val title: String,
         override val subtitle: String,
         override val progress: Float,
-        override val currentPackage: String
-    ) : ProcessProgressState
+        override val currentPackage: String,
+        val runId: Long = 0L,
+        val currentPackageStartedAtElapsedMs: Long? = null
+    ) : ProcessProgressState {
+        /**
+         * Measures elapsed work on the selected package without depending on wall-clock time.
+         *
+         * @param nowElapsedMs Current monotonic time in milliseconds from the same clock as the start.
+         * @return Whole elapsed seconds, or null until the package start is known.
+         */
+        fun currentPackageElapsedSeconds(nowElapsedMs: Long): Long? {
+            val startedAt = currentPackageStartedAtElapsedMs ?: return null
+            if (currentPackage.isBlank()) return null
+            return ((nowElapsedMs - startedAt).coerceAtLeast(0L)) / 1_000L
+        }
+    }
 
     /**
      * An analysis scan is actively inspecting installed apps.
@@ -58,16 +74,23 @@ sealed interface ProcessProgressState {
          *
          * @param progress Live optimization progress from the domain layer.
          * @param titleText Localised headline string.
+         * @param preparingTitleText Headline before the first compile package is selected.
+         * @param preparingSubtitleText Description of the analysis and preparation phase.
          * @return [Optimizing] state ready for [ProcessProgressContent].
          */
         fun fromOptimizationProgress(
             progress: OptimizationProgress,
-            titleText: String
+            titleText: String,
+            preparingTitleText: String,
+            preparingSubtitleText: String
         ): Optimizing = Optimizing(
-            title = titleText,
-            subtitle = "${progress.processedCount} / ${progress.totalCount} apps",
+            title = if (progress.currentAppPackage.isBlank()) preparingTitleText else titleText,
+            subtitle = if (progress.currentAppPackage.isBlank()) preparingSubtitleText
+                else "${progress.processedCount} / ${progress.totalCount} apps",
             progress = progress.progress,
-            currentPackage = progress.currentAppPackage
+            currentPackage = progress.currentAppPackage,
+            runId = progress.runId,
+            currentPackageStartedAtElapsedMs = progress.currentPackageStartedAtElapsedMs
         )
 
         /**

@@ -26,6 +26,7 @@ import androidx.compose.material.icons.rounded.Error
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.RocketLaunch
 import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -193,7 +194,7 @@ fun HeroResultPanel(
                     Text(
                         text = stringResource(
                             R.string.analysis_apps_already_optimized,
-                            allOptimized.optimizedCount
+                            allOptimized.counts.matchingCount
                         ),
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
@@ -203,64 +204,23 @@ fun HeroResultPanel(
             }
         }
 
-        // ── Stats row (Completed and Canceled only) ─────────────────────
-        val showStats = when (status) {
-            is HeroCardStatus.Completed -> status.processedCount > 0 || status.skippedCount > 0
-            is HeroCardStatus.CompletedWithIssues -> status.processedCount > 0 ||
-                status.skippedCount > 0 ||
-                status.failedCount > 0 ||
-                status.osAdjustedCount > 0 ||
-                status.skippedNotApplicableCount > 0 ||
-                status.verificationUnavailableCount > 0
-            is HeroCardStatus.Canceled -> status.processedCount > 0 || status.skippedCount > 0
-            is HeroCardStatus.Failed -> status.processedCount > 0 || status.skippedCount > 0 || status.totalCount > 0
-            is HeroCardStatus.Paused -> status.processedCount > 0 || status.skippedCount > 0 || status.totalCount > 0
-            is HeroCardStatus.AllOptimized -> false
-        }
-
-        if (showStats) {
-            val isSpeedProfile = status.optimizationMode == AppOptimizationType.SPEED_PROFILE
-            if (status is HeroCardStatus.Completed) {
-                OptimizationStatsRow(
-                    needsOptimizationCount = 0,
-                    optimizedCount = status.processedCount + (status.skippedCount - status.noProfileCount).coerceAtLeast(0),
-                    noProfileCount = status.noProfileCount,
-                    showNoProfile = isSpeedProfile
-                )
-            } else if (status is HeroCardStatus.CompletedWithIssues) {
-                OptimizationStatsRow(
-                    needsOptimizationCount = 0,
-                    optimizedCount = status.processedCount + status.alreadyOptimizedCount,
-                    noProfileCount = status.noProfileCount,
-                    failedCount = status.failedCount,
-                    osAdjustedCount = status.osAdjustedCount,
-                    skippedNotApplicableCount = status.skippedNotApplicableCount,
-                    verificationUnavailableCount = status.verificationUnavailableCount,
-                    showNoProfile = isSpeedProfile
-                )
-            } else if (status is HeroCardStatus.Canceled) {
-                OptimizationStatsRow(
-                    needsOptimizationCount = (status.totalCount - (status.processedCount + status.skippedCount))
-                        .coerceAtLeast(0),
-                    optimizedCount = status.processedCount + (status.skippedCount - status.noProfileCount).coerceAtLeast(0),
-                    noProfileCount = status.noProfileCount,
-                    showNoProfile = isSpeedProfile
-                )
-            } else if (status is HeroCardStatus.Failed) {
-                OptimizationStatsRow(
-                    needsOptimizationCount = (status.totalCount - status.processedCount).coerceAtLeast(0),
-                    optimizedCount = status.processedCount + (status.skippedCount - status.noProfileCount).coerceAtLeast(0),
-                    noProfileCount = status.noProfileCount,
-                    showNoProfile = isSpeedProfile
-                )
-            } else if (status is HeroCardStatus.Paused) {
-                OptimizationStatsRow(
-                    needsOptimizationCount = (status.totalCount - status.processedCount).coerceAtLeast(0),
-                    optimizedCount = status.processedCount + (status.skippedCount - status.noProfileCount).coerceAtLeast(0),
-                    noProfileCount = status.noProfileCount,
-                    showNoProfile = isSpeedProfile
-                )
-            }
+        if (status !is HeroCardStatus.AllOptimized) {
+            val counts = status.counts
+            OptimizationStatsRow(
+                needsOptimizationCount = 0,
+                optimizedCount = counts.matchingCount,
+                optimizedLabel = stringResource(
+                    R.string.reliability_matching_filter,
+                    status.optimizationMode.requestedCompileMode
+                ),
+                unprocessedCount = counts.unprocessedCount,
+                noProfileCount = counts.noProfileCount,
+                failedCount = counts.failedCount,
+                osAdjustedCount = counts.osAdjustedCount,
+                skippedNotApplicableCount = counts.skippedNotApplicableCount,
+                verificationUnavailableCount = counts.verificationUnavailableCount,
+                showNoProfile = status.optimizationMode == AppOptimizationType.SPEED_PROFILE
+            )
         }
 
         // ── Action buttons ───────────────────────────────────────────────
@@ -381,9 +341,8 @@ private fun rememberHeroResultConfig(status: HeroCardStatus): HeroResultConfig {
             title = stringResource(R.string.dashboard_result_completed_title),
             subtitle = stringResource(
                 R.string.dashboard_result_completed_count,
-                status.processedCount,
-                // denominator = apps actually dealt with, not the original target total
-                status.processedCount + status.skippedCount
+                status.counts.matchingCount,
+                status.counts.totalCount
             ),
             iconScaleTarget = 1.06f,
             pulseMs = 800,
@@ -391,19 +350,34 @@ private fun rememberHeroResultConfig(status: HeroCardStatus): HeroResultConfig {
             showRunAgain = true
         )
         is HeroCardStatus.CompletedWithIssues -> HeroResultConfig(
-            icon = Icons.Rounded.Error,
-            containerColor = colorScheme.errorContainer,
-            iconTint = colorScheme.onErrorContainer,
+            icon = if (status.isAndroidAdjustedCompletion) Icons.Rounded.Info else Icons.Rounded.Error,
+            containerColor = if (status.isAndroidAdjustedCompletion) {
+                colorScheme.secondaryContainer
+            } else colorScheme.errorContainer,
+            iconTint = if (status.isAndroidAdjustedCompletion) {
+                colorScheme.onSecondaryContainer
+            } else colorScheme.onErrorContainer,
             glowColor = Color.Transparent,
-            title = stringResource(R.string.dashboard_result_completed_issues_title),
-            subtitle = stringResource(
-                R.string.dashboard_result_completed_issues_count,
-                status.processedCount,
-                status.failedCount,
-                status.osAdjustedCount,
-                status.skippedNotApplicableCount,
-                status.verificationUnavailableCount
+            title = stringResource(
+                if (status.isAndroidAdjustedCompletion) R.string.reliability_android_adjusted_title
+                else R.string.dashboard_result_completed_issues_title
             ),
+            subtitle = if (status.isAndroidAdjustedCompletion) {
+                stringResource(
+                    R.string.reliability_android_adjusted_subtitle,
+                    status.counts.osAdjustedCount,
+                    status.optimizationMode.requestedCompileMode
+                )
+            } else {
+                stringResource(
+                    R.string.dashboard_result_completed_issues_count,
+                    status.counts.matchingCount,
+                    status.counts.failedCount,
+                    status.counts.osAdjustedCount,
+                    status.counts.skippedNotApplicableCount,
+                    status.counts.verificationUnavailableCount
+                )
+            },
             iconScaleTarget = 1.04f,
             pulseMs = 900,
             showGlow = false,
@@ -417,8 +391,8 @@ private fun rememberHeroResultConfig(status: HeroCardStatus): HeroResultConfig {
             title = stringResource(R.string.dashboard_result_canceled_title),
             subtitle = stringResource(
                 R.string.dashboard_result_canceled_count,
-                status.processedCount,
-                status.totalCount
+                status.counts.matchingCount,
+                status.counts.totalCount
             ),
             iconScaleTarget = 1.04f,
             pulseMs = 900,
@@ -433,8 +407,8 @@ private fun rememberHeroResultConfig(status: HeroCardStatus): HeroResultConfig {
             title = stringResource(R.string.dashboard_result_failed_title),
             subtitle = stringResource(
                 R.string.dashboard_result_failed_count,
-                status.processedCount,
-                status.totalCount
+                status.counts.matchingCount,
+                status.counts.totalCount
             ),
             iconScaleTarget = 1.04f,
             pulseMs = 900,
@@ -478,7 +452,9 @@ private fun rememberHeroResultConfig(status: HeroCardStatus): HeroResultConfig {
 private fun HeroResultPanelCompletedPreview() {
     AppBoosterTheme {
         HeroResultPanel(
-            status = HeroCardStatus.Completed(processedCount = 18, skippedCount = 4, totalCount = 22),
+            status = HeroCardStatus.Completed(
+                HeroResultCounts(succeededCount = 18, alreadyOptimizedCount = 4)
+            ),
             onDismiss = {},
             onRunAgain = {},
             onForceOptimize = {}
@@ -492,7 +468,9 @@ private fun HeroResultPanelCompletedPreview() {
 private fun HeroResultPanelCanceledPreview() {
     AppBoosterTheme {
         HeroResultPanel(
-            status = HeroCardStatus.Canceled(processedCount = 7, skippedCount = 2, totalCount = 22),
+            status = HeroCardStatus.Canceled(
+                HeroResultCounts(succeededCount = 7, alreadyOptimizedCount = 2, unprocessedCount = 15)
+            ),
             onDismiss = {},
             onRunAgain = {},
             onForceOptimize = {}
@@ -506,7 +484,9 @@ private fun HeroResultPanelCanceledPreview() {
 private fun HeroResultPanelFailedPreview() {
     AppBoosterTheme {
         HeroResultPanel(
-            status = HeroCardStatus.Failed(processedCount = 7, skippedCount = 2, totalCount = 22),
+            status = HeroCardStatus.Failed(
+                HeroResultCounts(succeededCount = 7, alreadyOptimizedCount = 2, unprocessedCount = 15)
+            ),
             onDismiss = {},
             onRunAgain = {},
             onForceOptimize = {}
@@ -522,9 +502,7 @@ private fun HeroResultPanelPausedPreview() {
         HeroResultPanel(
             status = HeroCardStatus.Paused(
                 reason = "Battery is 20%, below the 35% guard",
-                processedCount = 0,
-                skippedCount = 0,
-                totalCount = 22
+                counts = HeroResultCounts(unprocessedCount = 22)
             ),
             onDismiss = {},
             onRunAgain = {},
@@ -539,9 +517,28 @@ private fun HeroResultPanelPausedPreview() {
 private fun HeroResultPanelAllOptimizedPreview() {
     AppBoosterTheme {
         HeroResultPanel(
-            status = HeroCardStatus.AllOptimized(optimizedCount = 22, noProfileCount = 3),
+            status = HeroCardStatus.AllOptimized(HeroResultCounts(alreadyOptimizedCount = 22)),
             onDismiss = {},
             onForceOptimize = {}
+        )
+    }
+}
+
+@Preview(name = "Android adjusted – Large Font", fontScale = 1.5f, showBackground = true)
+@Composable
+private fun HeroResultPanelAndroidAdjustedPreview() {
+    AppBoosterTheme {
+        HeroResultPanel(
+            status = HeroCardStatus.CompletedWithIssues(
+                counts = HeroResultCounts(
+                    succeededCount = 30,
+                    alreadyOptimizedCount = 670,
+                    osAdjustedCount = 37,
+                    skippedNotApplicableCount = 19
+                ),
+                optimizationMode = AppOptimizationType.ADVANCED_FULL_COMPILE
+            ),
+            onDismiss = {}
         )
     }
 }

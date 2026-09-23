@@ -75,6 +75,14 @@
     <string name="dashboard_title">Galaxy OptiDroid</string>
     <string name="dashboard_optimizing_title">Optimizing Apps</string>
     <string name="dashboard_optimizing_subtitle">Please wait while we enhance performance</string>
+    <string name="reliability_preparing_title">Preparing optimization</string>
+    <string name="reliability_preparing_subtitle">Analyzing installed apps and preparing the compile plan</string>
+    <string name="reliability_package_elapsed">Working on this app · %1$d:%2$02d elapsed</string>
+    <string name="reliability_package_long_running">Waiting for Android to finish this app. Some packages take several minutes.</string>
+    <string name="reliability_android_adjusted_title">Completed — Android adjusted</string>
+    <string name="reliability_android_adjusted_subtitle">Android selected a different filter for %1$d apps without a command failure. These are separate from apps verified at the requested %2$s filter.</string>
+    <string name="reliability_matching_filter">Match requested filter (%1$s)</string>
+    <string name="reliability_not_processed">Not processed</string>
     <string name="dashboard_current_app_label">Current app</string>
     <string name="dashboard_preparing">Preparing...</string>
     <string name="dashboard_progress_fraction">%1$d/%2$d</string>

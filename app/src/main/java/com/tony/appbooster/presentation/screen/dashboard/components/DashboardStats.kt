@@ -41,6 +41,8 @@ import com.tony.appbooster.presentation.ui.theme.AppBoosterTheme
  * @param optimizedCount Number of apps already optimized.
  * @param noProfileCount Number of apps with no runtime profile; row is omitted when 0 or when
  *   [showNoProfile] is false.
+ * @param unprocessedCount Compile targets without a terminal outcome, shown separately from analysis needs.
+ * @param optimizedLabel Label identifying the requested filter when rendering run results.
  * @param showNoProfile Whether to display the "no profile" row at all. Set to false in
  *   speed (full compilation) mode because profile files are irrelevant there —
  *   every app is compiled unconditionally.
@@ -54,7 +56,9 @@ fun OptimizationStatsRow(
     osAdjustedCount: Int = 0,
     skippedNotApplicableCount: Int = 0,
     verificationUnavailableCount: Int = 0,
-    showNoProfile: Boolean = true
+    showNoProfile: Boolean = true,
+    unprocessedCount: Int = 0,
+    optimizedLabel: String = stringResource(R.string.analysis_card_optimized)
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -66,6 +70,13 @@ fun OptimizationStatsRow(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            if (unprocessedCount > 0) {
+                StatRow(
+                    count = unprocessedCount,
+                    label = stringResource(R.string.reliability_not_processed),
+                    dotColor = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             if (needsOptimizationCount > 0) {
                 StatRow(
                     count = needsOptimizationCount,
@@ -75,7 +86,7 @@ fun OptimizationStatsRow(
             }
             StatRow(
                 count = optimizedCount,
-                label = stringResource(R.string.analysis_card_optimized),
+                label = optimizedLabel,
                 dotColor = MaterialTheme.colorScheme.tertiary
             )
             if (noProfileCount > 0 && showNoProfile) {

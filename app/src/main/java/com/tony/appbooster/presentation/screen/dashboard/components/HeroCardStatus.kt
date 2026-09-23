@@ -1,122 +1,99 @@
 package com.tony.appbooster.presentation.screen.dashboard.components
 
+import com.tony.appbooster.domain.model.common.OptimizationProgress
+import com.tony.appbooster.domain.model.common.OptimizationResult
 import com.tony.appbooster.domain.model.settings.AppOptimizationType
 
 /**
- * Represents every possible outcome state of the hero result card after an
- * optimization run completes or is interrupted.
+ * Presentation outcome for the dashboard, retaining the same counters for every terminal state.
  *
- * Each entry carries the data needed to drive a single, unified
- * [HeroResultPanel] composable instead of maintaining separate implementations
- * per outcome.
- *
- * @property processedCount Number of apps successfully optimized during the run.
- * @property skippedCount Number of apps skipped (already optimized or no profile).
- * @property totalCount Total apps targeted by the run (0 for [AllOptimized]).
- * @property optimizationMode The mode used for this run; controls which stats are shown
- *   (e.g. "no profile" is only meaningful for [AppOptimizationType.SPEED_PROFILE]).
+ * @property counts Explicit outcome populations from the run, never inferred from aggregate skips.
+ * @property optimizationMode Mode whose requested filter is represented by the matching count.
  */
 sealed interface HeroCardStatus {
-
-    val processedCount: Int
-    val skippedCount: Int
-    val totalCount: Int
+    val counts: HeroResultCounts
     val optimizationMode: AppOptimizationType
 
-    /**
-     * Optimization run finished without interruption.
-     *
-     * @property processedCount Apps fully optimized in this run.
-     * @property skippedCount Apps skipped because they were already optimal.
-     * @property totalCount Total apps that were targeted.
-     * @property noProfileCount Apps that had no runtime profile (speed-profile mode only).
-     * @property optimizationMode Mode used for this run.
-     */
+    /** Whether Android adjusted the filter without command failures or missing verification. */
+    val isAndroidAdjustedCompletion: Boolean
+        get() = this is CompletedWithIssues && counts.osAdjustedCount > 0 &&
+            counts.failedCount == 0 && counts.verificationUnavailableCount == 0
+
+    /** A run that finished without interruption. */
     data class Completed(
-        override val processedCount: Int,
-        override val skippedCount: Int,
-        override val totalCount: Int,
-        val noProfileCount: Int = 0,
+        override val counts: HeroResultCounts,
         override val optimizationMode: AppOptimizationType = AppOptimizationType.SPEED_PROFILE
     ) : HeroCardStatus
 
-    /** Uses the explicit already-matching count; other outcomes are separate populations. */
+    /** A finished run containing adjustments, command failures, or missing verification. */
     data class CompletedWithIssues(
-        override val processedCount: Int,
-        override val skippedCount: Int,
-        val alreadyOptimizedCount: Int,
-        val failedCount: Int,
-        val osAdjustedCount: Int,
-        val skippedNotApplicableCount: Int,
-        val verificationUnavailableCount: Int,
-        override val totalCount: Int,
-        val noProfileCount: Int = 0,
+        override val counts: HeroResultCounts,
         override val optimizationMode: AppOptimizationType = AppOptimizationType.SPEED_PROFILE
     ) : HeroCardStatus
 
-    /**
-     * Optimization run was stopped by the user before all apps were processed.
-     *
-     * @property processedCount Apps optimized before cancellation.
-     * @property skippedCount Apps skipped before cancellation.
-     * @property totalCount Total apps that were targeted.
-     * @property noProfileCount Apps that had no runtime profile (speed-profile mode only).
-     * @property optimizationMode Mode used for this run.
-     */
+    /** A run stopped by the user, retaining all outcomes reached before cancellation. */
     data class Canceled(
-        override val processedCount: Int,
-        override val skippedCount: Int,
-        override val totalCount: Int,
-        val noProfileCount: Int = 0,
+        override val counts: HeroResultCounts,
         override val optimizationMode: AppOptimizationType = AppOptimizationType.SPEED_PROFILE
     ) : HeroCardStatus
 
-    /**
-     * Optimization run stopped because a shell command returned a non-zero exit code.
-     *
-     * @property processedCount Apps optimized before the failure.
-     * @property skippedCount Apps skipped before the failure.
-     * @property totalCount Total apps that were targeted.
-     * @property noProfileCount Apps that had no runtime profile (speed-profile mode only).
-     * @property optimizationMode Mode used for this run.
-     */
+    /** A run stopped by a workflow failure. */
     data class Failed(
-        override val processedCount: Int,
-        override val skippedCount: Int,
-        override val totalCount: Int,
-        val noProfileCount: Int = 0,
+        override val counts: HeroResultCounts,
         override val optimizationMode: AppOptimizationType = AppOptimizationType.SPEED_PROFILE
     ) : HeroCardStatus
 
-    /**
-     * Optimization run was paused by battery or thermal guard checks.
-     *
-     * @property reason User-readable guard reason.
-     */
+    /** A run paused by a device health guard; [reason] explains the blocking condition. */
     data class Paused(
         val reason: String,
-        override val processedCount: Int,
-        override val skippedCount: Int,
-        override val totalCount: Int,
-        val noProfileCount: Int = 0,
+        override val counts: HeroResultCounts,
         override val optimizationMode: AppOptimizationType = AppOptimizationType.SPEED_PROFILE
     ) : HeroCardStatus
 
-    /**
-     * Every targeted app was already at peak optimization; nothing needed to run.
-     *
-     * @property optimizedCount Apps confirmed as already optimized.
-     * @property noProfileCount Apps skipped because they have no runtime profile
-     *   (only non-zero for [AppOptimizationType.SPEED_PROFILE]).
-     * @property optimizationMode Mode used for this run.
-     */
+    /** Every considered package already matched; no other outcome population is present. */
     data class AllOptimized(
-        val optimizedCount: Int,
-        val noProfileCount: Int = 0,
+        override val counts: HeroResultCounts,
         override val optimizationMode: AppOptimizationType = AppOptimizationType.SPEED_PROFILE
-    ) : HeroCardStatus {
-        override val processedCount: Int = 0
-        override val skippedCount: Int = noProfileCount
-        override val totalCount: Int = optimizedCount + noProfileCount
+    ) : HeroCardStatus
+
+    companion object {
+        /**
+         * Maps run results without borrowing counters from a potentially stale analysis snapshot.
+         *
+         * @param progress Most recent run state; `processedCount` counts completed compile targets.
+         * @param optimizationMode Mode selected for the run.
+         * @return Terminal presentation state, or null while no result is available.
+         */
+        fun fromProgress(
+            progress: OptimizationProgress,
+            optimizationMode: AppOptimizationType
+        ): HeroCardStatus? {
+            val counts = HeroResultCounts(
+                succeededCount = progress.optimizedSucceededCount,
+                alreadyOptimizedCount = progress.alreadyOptimizedCount,
+                noProfileCount = progress.skippedNoProfileCount,
+                failedCount = progress.failedOrRefusedCount,
+                osAdjustedCount = progress.osAdjustedFilterCount,
+                skippedNotApplicableCount = progress.skippedNotApplicableCount,
+                verificationUnavailableCount = progress.verificationUnavailableCount,
+                // Initial skips are outside the compile queue. Never subtract them here.
+                unprocessedCount = (progress.totalCount - progress.processedCount).coerceAtLeast(0)
+            )
+            return when (val result = progress.result) {
+                OptimizationResult.None -> null
+                OptimizationResult.Completed -> if (
+                    counts.alreadyOptimizedCount > 0 && counts.succeededCount == 0 &&
+                    counts.matchingCount == counts.totalCount
+                ) {
+                    AllOptimized(counts, optimizationMode)
+                } else {
+                    Completed(counts, optimizationMode)
+                }
+                OptimizationResult.CompletedWithIssues -> CompletedWithIssues(counts, optimizationMode)
+                OptimizationResult.Canceled -> Canceled(counts, optimizationMode)
+                OptimizationResult.Failed -> Failed(counts, optimizationMode)
+                is OptimizationResult.Paused -> Paused(result.reason, counts, optimizationMode)
+            }
+        }
     }
 }

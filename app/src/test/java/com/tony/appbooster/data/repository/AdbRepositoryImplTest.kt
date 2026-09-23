@@ -13,6 +13,7 @@ import com.tony.appbooster.domain.model.common.OptimizationResult
 import com.tony.appbooster.domain.model.common.Resource
 import com.tony.appbooster.domain.model.common.ShellCommandResult
 import com.tony.appbooster.domain.model.common.ShellCommandSpec
+import com.tony.appbooster.domain.model.common.ShellConnectionException
 import com.tony.appbooster.domain.model.device.DeviceGuardSnapshot
 import com.tony.appbooster.domain.model.device.StandbyBucket
 import com.tony.appbooster.domain.model.device.StandbyBucketSnapshot
@@ -681,6 +682,43 @@ class AdbRepositoryImplTest {
         coVerify(exactly = 0) {
             shellDataSource.executeCommandDetailed(match {
                 it is ShellCommandSpec.PackageCompile && it.full
+            })
+        }
+    }
+
+    @Test
+    fun `Shizuku loss pauses compilation and leaves remaining packages available to resume`() = runTest {
+        val firstPackage = "com.example.disconnected"
+        val secondPackage = "com.example.pending"
+        val steps = listOf(
+            optimizationStep(id = 81L, runId = 800L, stepIndex = 0, packageName = firstPackage),
+            optimizationStep(id = 82L, runId = 800L, stepIndex = 1, packageName = secondPackage)
+        )
+        coEvery { packageQuery.queryInstalledPackages() } returns listOf(firstPackage, secondPackage)
+        coEvery { optimizationStepDao.findLatestResumableRunId("SPEED_PROFILE", true) } returns null
+        coEvery { optimizationStepDao.getStepsForRun(any()) } returns steps
+        coEvery { compilationResolver.queryPackageCompilationInfo(any(), "speed-profile") } answers {
+            compilationInfo(firstArg(), compilerFilter = "verify")
+        }
+        stubPackageDump(firstPackage, "verify")
+        coEvery {
+            shellDataSource.executeCommandDetailed(ShellCommandSpec.PackageCompile(firstPackage, "speed-profile"))
+        } returns Result.failure(ShellConnectionException("Shizuku service is not running"))
+
+        val result = repository.executeOptimizationCommand(AppOptimizationType.SPEED_PROFILE, true)
+
+        assertTrue(result is Resource.Error)
+        val progress = repository.optimizationProgress.value
+        assertTrue(progress.result is OptimizationResult.Paused)
+        assertFalse(progress.isRunning)
+        assertEquals(0, progress.processedCount)
+        assertEquals(0, progress.failedOrRefusedCount)
+        coVerify(exactly = 0) { optimizationStepDao.markFailed(any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { optimizationStepDao.markRunCanceled(any(), any()) }
+        coVerify(exactly = 0) { optimizationStepDao.markRunning(steps[1].id, any(), any()) }
+        coVerify(exactly = 0) {
+            shellDataSource.executeCommandDetailed(match {
+                it is ShellCommandSpec.PackageCompile && it.packageName == secondPackage
             })
         }
     }

@@ -42,7 +42,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -56,7 +55,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tony.appbooster.R
-import com.tony.appbooster.domain.model.common.OptimizationResult
 import com.tony.appbooster.domain.model.settings.AppOptimizationType
 import com.tony.appbooster.presentation.viewmodel.main.MainUiModel
 
@@ -110,42 +108,15 @@ fun DashboardHeroCard(
         label = "cardElevation"
     )
 
-    // Derive a stable phase key so AnimatedContent only transitions when the
-    // *phase* changes (Idle → Optimizing → Completed, etc.).
-    // Without this, keying on the full OptimizationProgress object causes the
-    // bounce animation to fire on every per-app progress tick.
-    val heroPhase by remember(model) {
-        derivedStateOf {
-            val progress = model.optimizationProgress
-            val result = progress.result
-            when {
-                result is OptimizationResult.Completed
-                    && progress.processedCount == 0
-                    && progress.skippedCount > 0
-                    && !model.isCurrentResultDismissed -> HeroPhase.ALL_OPTIMIZED
-
-                result is OptimizationResult.Completed
-                    && !model.isCurrentResultDismissed -> HeroPhase.RESULT_COMPLETED
-
-                result is OptimizationResult.CompletedWithIssues
-                    && !model.isCurrentResultDismissed -> HeroPhase.RESULT_COMPLETED_WITH_ISSUES
-
-                result is OptimizationResult.Canceled
-                    && !model.isCurrentResultDismissed -> HeroPhase.RESULT_CANCELED
-
-                result is OptimizationResult.Failed
-                    && !model.isCurrentResultDismissed -> HeroPhase.RESULT_FAILED
-
-                result is OptimizationResult.Paused
-                    && !model.isCurrentResultDismissed -> HeroPhase.RESULT_PAUSED
-
-                progress.isRunning -> HeroPhase.OPTIMIZING
-
-                model.optimizationAnalysis.isScanning -> HeroPhase.SCANNING
-
-                else -> HeroPhase.READY
-            }
-        }
+    val resultStatus = remember(model.optimizationProgress, model.optimizationMode) {
+        HeroCardStatus.fromProgress(model.optimizationProgress, model.optimizationMode)
+    }
+    // Only phase changes animate; per-package updates stay within the same content.
+    val heroPhase = when {
+        model.optimizationProgress.isRunning -> HeroPhase.OPTIMIZING
+        model.optimizationAnalysis.isScanning -> HeroPhase.SCANNING
+        resultStatus != null && !model.isCurrentResultDismissed -> HeroPhase.RESULT
+        else -> HeroPhase.READY
     }
 
     Card(
@@ -194,107 +165,24 @@ fun DashboardHeroCard(
                 // Live data is read from `model` (outer scope) so progress ticks
                 // cause normal recomposition without triggering a new animation.
                 when (phase) {
-                    HeroPhase.ALL_OPTIMIZED -> {
-                        HeroResultPanel(
-                            status = HeroCardStatus.AllOptimized(
-                                optimizedCount = model.optimizationAnalysis.appsAlreadyOptimized,
-                                noProfileCount = model.optimizationAnalysis.appsWithNoProfile,
-                                optimizationMode = model.optimizationMode
-                            ),
-                            onDismiss = onDismissResult,
-                            onForceOptimize = onForceOptimize
-                        )
-                    }
-
-                    HeroPhase.RESULT_COMPLETED -> {
-                        HeroResultPanel(
-                            status = HeroCardStatus.Completed(
-                                processedCount = model.optimizationProgress.optimizedSucceededCount,
-                                skippedCount = model.optimizationProgress.skippedCount,
-                                totalCount = model.optimizationProgress.totalCount,
-                                noProfileCount = model.optimizationAnalysis.appsWithNoProfile,
-                                optimizationMode = model.optimizationMode
-                            ),
-                            onDismiss = onDismissResult,
-                            onRunAgain = onStartOptimization,
-                            onForceOptimize = onForceOptimize
-                        )
-                    }
-
-                    HeroPhase.RESULT_COMPLETED_WITH_ISSUES -> {
-                        HeroResultPanel(
-                            status = HeroCardStatus.CompletedWithIssues(
-                                processedCount = model.optimizationProgress.optimizedSucceededCount,
-                                skippedCount = model.optimizationProgress.skippedCount,
-                                alreadyOptimizedCount = model.optimizationProgress.alreadyOptimizedCount,
-                                failedCount = model.optimizationProgress.failedOrRefusedCount,
-                                osAdjustedCount = model.optimizationProgress.osAdjustedFilterCount,
-                                skippedNotApplicableCount =
-                                    model.optimizationProgress.skippedNotApplicableCount,
-                                verificationUnavailableCount =
-                                    model.optimizationProgress.verificationUnavailableCount,
-                                totalCount = model.optimizationProgress.totalCount,
-                                noProfileCount = model.optimizationAnalysis.appsWithNoProfile,
-                                optimizationMode = model.optimizationMode
-                            ),
-                            onDismiss = onDismissResult,
-                            onRunAgain = onStartOptimization,
-                            onForceOptimize = onForceOptimize
-                        )
-                    }
-
-                    HeroPhase.RESULT_CANCELED -> {
-                        HeroResultPanel(
-                            status = HeroCardStatus.Canceled(
-                                processedCount = model.optimizationProgress.optimizedSucceededCount,
-                                skippedCount = model.optimizationProgress.skippedCount,
-                                totalCount = model.optimizationProgress.totalCount,
-                                noProfileCount = model.optimizationAnalysis.appsWithNoProfile,
-                                optimizationMode = model.optimizationMode
-                            ),
-                            onDismiss = onDismissResult,
-                            onRunAgain = onStartOptimization,
-                            onForceOptimize = onForceOptimize
-                        )
-                    }
-
-                    HeroPhase.RESULT_FAILED -> {
-                        HeroResultPanel(
-                            status = HeroCardStatus.Failed(
-                                processedCount = model.optimizationProgress.optimizedSucceededCount,
-                                skippedCount = model.optimizationProgress.skippedCount,
-                                totalCount = model.optimizationProgress.totalCount,
-                                noProfileCount = model.optimizationAnalysis.appsWithNoProfile,
-                                optimizationMode = model.optimizationMode
-                            ),
-                            onDismiss = onDismissResult,
-                            onRunAgain = onStartOptimization,
-                            onForceOptimize = onForceOptimize
-                        )
-                    }
-
-                    HeroPhase.RESULT_PAUSED -> {
-                        val paused = model.optimizationProgress.result as OptimizationResult.Paused
-                        HeroResultPanel(
-                            status = HeroCardStatus.Paused(
-                                reason = paused.reason,
-                                processedCount = model.optimizationProgress.optimizedSucceededCount,
-                                skippedCount = model.optimizationProgress.skippedCount,
-                                totalCount = model.optimizationProgress.totalCount,
-                                noProfileCount = model.optimizationAnalysis.appsWithNoProfile,
-                                optimizationMode = model.optimizationMode
-                            ),
-                            onDismiss = onDismissResult,
-                            onRunAgain = onStartOptimization,
-                            onForceOptimize = onForceOptimize
-                        )
+                    HeroPhase.RESULT -> {
+                        resultStatus?.let { status ->
+                            HeroResultPanel(
+                                status = status,
+                                onDismiss = onDismissResult,
+                                onRunAgain = onStartOptimization,
+                                onForceOptimize = onForceOptimize
+                            )
+                        }
                     }
 
                     HeroPhase.OPTIMIZING -> {
                         ProcessProgressContent(
                             state = ProcessProgressState.fromOptimizationProgress(
                                 progress = model.optimizationProgress,
-                                titleText = stringResource(R.string.dashboard_optimizing_title)
+                                titleText = stringResource(R.string.dashboard_optimizing_title),
+                                preparingTitleText = stringResource(R.string.reliability_preparing_title),
+                                preparingSubtitleText = stringResource(R.string.reliability_preparing_subtitle)
                             ),
                             onStop = onStopOptimization
                         )
@@ -503,10 +391,5 @@ private enum class HeroPhase {
     READY,
     SCANNING,
     OPTIMIZING,
-    RESULT_COMPLETED,
-    RESULT_COMPLETED_WITH_ISSUES,
-    RESULT_CANCELED,
-    RESULT_FAILED,
-    RESULT_PAUSED,
-    ALL_OPTIMIZED
+    RESULT
 }

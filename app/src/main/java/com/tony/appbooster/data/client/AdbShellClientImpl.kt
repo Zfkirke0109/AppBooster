@@ -5,8 +5,10 @@ import com.tony.appbooster.domain.client.AdbShellClient
 import com.tony.appbooster.domain.client.ShizukuShellClient
 import com.tony.appbooster.domain.model.common.ShellCommandResult
 import com.tony.appbooster.domain.model.common.ShellCommandSpec
+import com.tony.appbooster.domain.model.common.ShellConnectionException
 import com.tony.appbooster.domain.model.common.requireSuccess
 import com.tony.appbooster.domain.model.shizuku.ShizukuState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
@@ -49,22 +51,22 @@ class AdbShellClientImpl @Inject constructor(
                 // Intentionally no-op: higher layers (repository/UI) handle user-facing logging.
             }
             ShizukuState.NotInstalled -> {
-                throw IllegalStateException(
+                throw ShellConnectionException(
                     "Shizuku is not installed. Please install Shizuku from the Play Store or shizuku.rikka.app"
                 )
             }
             ShizukuState.NotRunning -> {
-                throw IllegalStateException(
+                throw ShellConnectionException(
                     "Shizuku service is not running. Please start it via shizuku app"
                 )
             }
             ShizukuState.PermissionRequired -> {
-                throw IllegalStateException(
+                throw ShellConnectionException(
                     "Shizuku permission required. Please grant permission in the Shizuku app."
                 )
             }
             is ShizukuState.Error -> {
-                throw IllegalStateException(
+                throw ShellConnectionException(
                     "Shizuku error: ${currentState.message}"
                 )
             }
@@ -76,9 +78,26 @@ class AdbShellClientImpl @Inject constructor(
 
         // Do not log commands here to avoid duplicated logs; repositories already log "> <command>".
 
-        val result = shizukuClient.execute(command)
+        val result = try {
+            shizukuClient.execute(command)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (failure: Exception) {
+            // The binder or permission may disappear after the preflight check.
+            ensureConnected()
+            throw failure
+        }
 
         if (!result.isSuccess) {
+            // Recheck live access before attributing a failure to this package.
+            ensureConnected()
+            // Negative status is the service's sentinel for execution/transport
+            // failure, not an exit code from a completed package command.
+            if (result.exitCode < 0) {
+                throw ShellConnectionException(
+                    result.error.ifBlank { "Shizuku shell service is unavailable. Reconnect and try again." }
+                )
+            }
             val detailSource = if (result.error.isNotBlank()) "stderr" else "stdout"
             val boundedDetail = result.error.ifBlank { result.output }
                 .replace(Regex("[\\r\\n\\t]+"), " ")
@@ -133,5 +152,6 @@ internal fun ShellCommandSpec.logOperationName(): String = when (this) {
     is ShellCommandSpec.PackageCompile -> "PackageCompile(package=$packageName)"
     is ShellCommandSpec.PackageCompileCheck -> "PackageCompileCheck(package=$packageName)"
     is ShellCommandSpec.PackageCompileReset -> "PackageCompileReset(package=$packageName)"
+    is ShellCommandSpec.MeasureColdLaunch -> "MeasureColdLaunch(component=$component)"
     is ShellCommandSpec.GetStandbyBucket -> "GetStandbyBucket(package=$packageName)"
 }

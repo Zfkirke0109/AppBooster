@@ -25,6 +25,7 @@ import com.tony.appbooster.domain.model.common.Resource
 import com.tony.appbooster.domain.model.common.ResourceError
 import com.tony.appbooster.domain.model.common.ShellCommandException
 import com.tony.appbooster.domain.model.common.ShellCommandSpec
+import com.tony.appbooster.domain.model.common.ShellConnectionException
 import com.tony.appbooster.domain.model.common.requireSuccess
 import com.tony.appbooster.domain.model.device.blockingSummary
 import com.tony.appbooster.domain.model.settings.AppOptimizationType
@@ -73,7 +74,8 @@ class AdbRepositoryImpl @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val telemetryRepository: OptimizationTelemetryRepository,
     private val storageCapacityProvider: StorageCapacityProvider,
-    private val telemetryExporter: TelemetryExporter
+    private val telemetryExporter: TelemetryExporter,
+    private val operationCoordinator: com.tony.appbooster.domain.service.ShellOperationCoordinator = com.tony.appbooster.domain.service.ShellOperationCoordinator()
 ) : AdbRepository {
 
     companion object {
@@ -238,10 +240,15 @@ class AdbRepositoryImpl @Inject constructor(
      * @return [Resource.Success] when the flow completes,
      *         or [Resource.Error] describing the failure.
      */
-    override suspend fun executeOptimizationCommand(
-        mode: AppOptimizationType,
-        forceOptimize: Boolean
-    ): Resource<Unit> {
+    override suspend fun executeOptimizationCommand(mode: AppOptimizationType, forceOptimize: Boolean): Resource<Unit> = try {
+        operationCoordinator.exclusive { executeOptimizationCommandExclusive(mode, forceOptimize) }
+    } catch (cancel: CancellationException) {
+        throw cancel
+    } catch (error: Exception) {
+        Resource.Error(ResourceError.LogicError(errorMessage = error.message))
+    }
+
+    private suspend fun executeOptimizationCommandExclusive(mode: AppOptimizationType, forceOptimize: Boolean): Resource<Unit> {
         val compileMode = mode.requestedCompileMode
         val modeKey = mode.value
         val requestedRunId = System.currentTimeMillis()
@@ -446,9 +453,15 @@ class AdbRepositoryImpl @Inject constructor(
      * @param mode The optimisation mode to analyse against.
      * @return [Resource] with [OptimizationAnalysis] results.
      */
-    override suspend fun analyzeOptimizationStatus(
-        mode: AppOptimizationType
-    ): Resource<OptimizationAnalysis> = runCatching {
+    override suspend fun analyzeOptimizationStatus(mode: AppOptimizationType): Resource<OptimizationAnalysis> = try {
+        operationCoordinator.exclusive { analyzeOptimizationStatusExclusive(mode) }
+    } catch (cancel: CancellationException) {
+        throw cancel
+    } catch (error: Exception) {
+        Resource.Error(ResourceError.LogicError(errorMessage = error.message))
+    }
+
+    private suspend fun analyzeOptimizationStatusExclusive(mode: AppOptimizationType): Resource<OptimizationAnalysis> = runCatching {
         analysisCancelRequested.set(false)
         logger.clearLogEntries()
         compilationResolver.resetCaches()
@@ -525,7 +538,15 @@ class AdbRepositoryImpl @Inject constructor(
         onFailure = { Resource.Error(ResourceError.LogicError(it.message)) }
     )
 
-    override suspend fun rollbackOptimization(packageName: String): Resource<Unit> = runCatching {
+    override suspend fun rollbackOptimization(packageName: String): Resource<Unit> = try {
+        operationCoordinator.exclusive { rollbackOptimizationExclusive(packageName) }
+    } catch (cancel: CancellationException) {
+        throw cancel
+    } catch (error: Exception) {
+        Resource.Error(ResourceError.LogicError(errorMessage = error.message))
+    }
+
+    private suspend fun rollbackOptimizationExclusive(packageName: String): Resource<Unit> = runCatching {
         PackageNameValidator.requireValid(packageName)
         when (val connected = ensureConnected()) {
             is Resource.Success -> Unit
@@ -1010,17 +1031,14 @@ class AdbRepositoryImpl @Inject constructor(
     }
 
     /**
-     * Iterates over [packages] and compiles each one, checking for
+     * Iterates over [plan] and compiles each package, checking for
      * cancellation between iterations.
      *
      * A failure compiling a single package (e.g. a Samsung/Knox-protected
-     * system package that rejects `cmd package compile`, or a transient
-     * Shizuku/Binder error) no longer aborts the entire run. Each package is
-     * compiled independently: failures are recorded against that step only,
-     * and the loop continues so every remaining package is still located and
-     * processed. This ensures "optimize all apps" reliably reaches every
-     * installed package instead of silently stopping partway through on
-     * devices with many OEM/Knox packages that may not all be compilable.
+     * system package that rejects `cmd package compile`) is recorded against
+     * that step, and the loop continues. Loss of Shizuku access pauses the
+     * run so the interrupted and remaining packages can be retried after
+     * access is restored.
      */
     private suspend fun compilePackages(
         plan: OptimizationRunPlan,
@@ -1057,7 +1075,8 @@ class AdbRepositoryImpl @Inject constructor(
 
             val packageName = step.packageName
             _optimizationProgress.value = _optimizationProgress.value.copy(
-                currentAppPackage = packageName
+                currentAppPackage = packageName,
+                currentPackageStartedAtElapsedMs = SystemClock.elapsedRealtime()
             )
             logger.addLogEntry(LogEntryType.OPTIMIZING, messageKey = LogMessageKey.OPTIMIZING_APP, packageName = packageName)
 
@@ -1171,6 +1190,13 @@ class AdbRepositoryImpl @Inject constructor(
                 // That is not a package failure — rethrow so the run-level
                 // handler records the Canceled outcome.
                 if (throwable is CancellationException) throw throwable
+                if (throwable is ShellConnectionException) {
+                    val message = throwable.message ?: "Shizuku shell access is unavailable."
+                    _connectionState.value = AdbConnectionState.Error(message)
+                    // Keep this step RUNNING and later steps PENDING. Resume
+                    // resets interrupted steps after shell access is restored.
+                    throw OptimizationPausedException(message)
+                }
                 recordStepFailure(step.id, packageName, throwable)
                 recordOutcome(
                     step = step,
