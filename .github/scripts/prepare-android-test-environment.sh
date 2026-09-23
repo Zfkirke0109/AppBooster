@@ -1,44 +1,30 @@
 #!/usr/bin/env bash
 set -euo pipefail
+trap 'echo "CI emulator preparation failed at line $LINENO" >&2' ERR
 
-# API 37 / emulator 37.1.11 aborts in mapper.ranchu when system_server
-# persists Recents thumbnails. This affects the test host, not app assertions.
-# AOSP TaskSnapshotController reads config_disableTaskSnapshots at startup:
-# https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/services/core/java/com/android/server/wm/TaskSnapshotController.java
-# Disable that unrelated OS feature only on this disposable CI emulator.
+# API 37 / emulator 37.1.11 aborts in mapper.ranchu while system_server
+# persists Recents thumbnails. Configure the disposable test host only;
+# release app code and all instrumentation assertions remain unchanged.
 test "${GITHUB_ACTIONS:-}" = true
 test "$(adb shell getprop ro.kernel.qemu | tr -d '\r')" = 1
 test "$(adb shell getprop ro.build.version.sdk | tr -d '\r')" = 37
+test "$(adb shell id -u | tr -d '\r')" = 2000
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 bash "$script_dir/prepare-android-test-navigation.sh"
 
-adb root
-adb wait-for-device
-test "$(adb shell id -u | tr -d '\r')" = 0
-adb shell cmd overlay fabricate --target android --name OptiDroidCiSnapshots \
-  android:bool/config_disableTaskSnapshots 0x12 0x1
-adb shell cmd overlay enable --user 0 com.android.shell:OptiDroidCiSnapshots
-test "$(adb shell cmd overlay lookup --user 0 android android:bool/config_disableTaskSnapshots | tr -d '\r')" = true
-
-# The snapshot controller caches its resource at system_server construction.
-adb reboot
-timeout 120 adb wait-for-device
-ready=false
-for attempt in {1..90}; do
-  if [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = 1 ]; then
-    ready=true
-    break
-  fi
-  sleep 2
-done
-test "$ready" = true
-adb unroot
-adb wait-for-device
-test "$(adb shell id -u | tr -d '\r')" = 2000
-test "$(adb shell cmd overlay lookup --user 0 android android:bool/config_disableTaskSnapshots | tr -d '\r')" = true
-bash "$script_dir/prepare-android-test-navigation.sh"
-adb shell settings put global window_animation_scale 0
-adb shell settings put global transition_animation_scale 0
-adb shell settings put global animator_duration_scale 0
-adb shell wm dismiss-keyguard
-echo 'CI emulator ready: Recents snapshots disabled; app instrumentation runs with normal app permissions.'
+# Invoke the live WindowManager switch by its runtime interface rather than
+# hard-coding a Binder transaction ID. A resource overlay was lost on reboot.
+# https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/services/core/java/com/android/server/wm/WindowManagerService.java
+ci_classes="$(mktemp -d)"
+trap 'rm -rf "$ci_classes"' EXIT
+javac --release 8 -d "$ci_classes" "$script_dir/DisableCiSnapshots.java"
+"$ANDROID_HOME/build-tools/37.0.0/d8" --min-api 29 \
+  --lib "$ANDROID_HOME/platforms/android-37.0/android.jar" \
+  --output "$ci_classes" "$ci_classes/DisableCiSnapshots.class"
+adb push "$ci_classes/classes.dex" /data/local/tmp/optidroid-ci-snapshots.dex
+adb shell CLASSPATH=/data/local/tmp/optidroid-ci-snapshots.dex app_process /system/bin DisableCiSnapshots
+adb shell dumpsys window > "$ci_classes/window-state.txt"
+grep -B 3 -A 3 'mSnapshotEnabled=' "$ci_classes/window-state.txt"
+grep -F 'mSnapshotEnabled=false' "$ci_classes/window-state.txt"
+adb shell rm /data/local/tmp/optidroid-ci-snapshots.dex
+echo 'CI emulator ready: task snapshots disabled; normal shell and app permissions retained.'
