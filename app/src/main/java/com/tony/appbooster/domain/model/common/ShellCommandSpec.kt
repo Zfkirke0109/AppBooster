@@ -135,7 +135,7 @@ sealed interface ShellCommandSpec {
     /** Process-cold launch of one explicit launcher component, for measured startup timing. */
     data class MeasureColdLaunch(val component: String) : ShellCommandSpec {
         init { require(isValidComponent(component)) { "Invalid launcher component" } }
-        override val argv = listOf("am", "start", "-S", "-W", "--user", "current", "-n", component,
+        override val argv = listOf("am", "start", "-S", "-W", "--user", "0", "-n", component,
             "-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER")
         override val displayCommand = argv.joinToString(" ")
     }
@@ -162,7 +162,7 @@ sealed interface ShellCommandSpec {
                     argv[1] == "package" ->
                     PackageNameValidator.isValid(argv[2])
 
-                argv.size == 12 && argv.take(7) == listOf("am", "start", "-S", "-W", "--user", "current", "-n") &&
+                argv.size == 12 && argv.take(7) == listOf("am", "start", "-S", "-W", "--user", "0", "-n") &&
                     isValidComponent(argv[7]) && argv.drop(8) == listOf("-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER") -> true
                 isAllowedPackageDump(argv) -> true
                 isAllowedPackageCompile(argv) -> true

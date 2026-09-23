@@ -365,8 +365,8 @@ class AdbRepositoryImpl @Inject constructor(
             onFailure = { throwable ->
                 if (throwable is CancellationException || wasCancelled()) {
                     // The Stop flow sets repository cancellation first, then
-                    // cancels WorkManager, which aborts the in-flight shell
-                    // command with a CancellationException. That exception (or
+                    // cancels WorkManager. The synchronous shell command may
+                    // finish before cancellation is observed. That exception (or
                     // any other error racing a requested cancel) must end the
                     // run as Canceled — never as Failed.
                     if (_optimizationProgress.value.result !is OptimizationResult.Canceled) {
@@ -749,11 +749,20 @@ class AdbRepositoryImpl @Inject constructor(
     ): OptimizationRunPlan? {
         val runId = optimizationStepDao.findLatestResumableRunId(compileMode, forceOptimize)
             ?: return null
-        val steps = optimizationStepDao.prepareResumedRun(runId, System.currentTimeMillis())
+        // Read first: rejected plans remain intact as historical evidence.
+        val steps = optimizationStepDao.getStepsForRun(runId)
         if (steps.isEmpty()) return null
 
         val skippedCount = steps.firstOrNull()?.skippedCount ?: 0
         val existingTelemetry = telemetryRepository.getRun(runId)
+        if (!ResumeIdentityPolicy.canReusePlan(
+                steps = steps,
+                telemetry = existingTelemetry,
+                currentAndroidBuild = runtimeIdentity.androidBuild,
+                currentArtModuleVersion = runtimeIdentity.artModuleVersion
+            )
+        ) return null
+
         val classifiedOptimizedCount = steps.count {
             outcomeForStep(it) ==
                 OptimizationStepOutcome.VERIFIED_REQUESTED_FILTER
@@ -774,8 +783,39 @@ class AdbRepositoryImpl @Inject constructor(
             outcomeForStep(it) ==
                 OptimizationStepOutcome.VERIFICATION_UNAVAILABLE
         }
-        // Persisted progress also includes packages classified before compile-step creation.
-        // Keep the larger value so a resumed run cannot lose those terminal categories.
+        val classifiedProcessedCount = classifiedOptimizedCount + classifiedFailedCount +
+            classifiedOsAdjustedCount + classifiedSkippedNotApplicableCount +
+            classifiedVerificationUnavailableCount
+        // Aggregate-only results cannot be checked against current package identities.
+        if (existingTelemetry != null && (
+                existingTelemetry.optimizedSucceededCount > classifiedOptimizedCount ||
+                    existingTelemetry.failedOrRefusedCount > classifiedFailedCount ||
+                    existingTelemetry.osAdjustedFilterCount > classifiedOsAdjustedCount ||
+                    existingTelemetry.skippedNotApplicableCount > classifiedSkippedNotApplicableCount ||
+                    existingTelemetry.verificationUnavailableCount > classifiedVerificationUnavailableCount ||
+                    existingTelemetry.processedCount > classifiedProcessedCount
+                )
+        ) return null
+
+        val requestedFilter = AppOptimizationType.fromStoredValue(compileMode)?.requestedCompileMode
+            ?: return null
+        compilationResolver.resetCaches()
+        for (step in steps) {
+            if (step.outcome == null && outcomeForStep(step) == null) continue
+            if (step.packageLastUpdateTimeMs == null || step.packageLastUpdateTimeMs <= 0L) return null
+            val currentUpdateTimeMs = compilationResolver
+                .queryPackageCompilationInfo(step.packageName, requestedFilter)
+                .lastUpdateTimeMs
+            if (!ResumeIdentityPolicy.hasSamePackageIdentity(
+                    step.packageLastUpdateTimeMs,
+                    currentUpdateTimeMs
+                )
+            ) return null
+        }
+
+        val resumedSteps = optimizationStepDao.prepareResumedRun(runId, System.currentTimeMillis())
+        if (resumedSteps.isEmpty()) return null
+        // A crash may leave telemetry behind the validated step records.
         val optimizedCount = maxOf(
             classifiedOptimizedCount,
             existingTelemetry?.optimizedSucceededCount ?: 0
@@ -794,15 +834,12 @@ class AdbRepositoryImpl @Inject constructor(
             existingTelemetry?.verificationUnavailableCount ?: 0
         )
         val unverifiedCount = osAdjustedCount + verificationUnavailableCount
-        val classifiedProcessedCount = classifiedOptimizedCount + classifiedFailedCount +
-            classifiedOsAdjustedCount + classifiedSkippedNotApplicableCount +
-            classifiedVerificationUnavailableCount
         val processedCount = maxOf(classifiedProcessedCount, existingTelemetry?.processedCount ?: 0)
 
         return OptimizationRunPlan(
             runId = runId,
-            steps = steps,
-            totalCount = steps.size,
+            steps = resumedSteps,
+            totalCount = resumedSteps.size,
             skippedCount = skippedCount,
             alreadyOptimizedCount = existingTelemetry?.alreadyOptimizedCount ?: skippedCount,
             skippedNoProfileCount = existingTelemetry?.skippedNoProfileCount ?: 0,

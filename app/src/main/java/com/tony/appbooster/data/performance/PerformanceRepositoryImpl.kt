@@ -10,7 +10,9 @@ import android.content.pm.PackageManager
 import android.os.BatteryManager
 import android.os.Build
 import android.os.PowerManager
+import android.os.Process
 import android.os.SystemClock
+import android.provider.Settings
 import android.util.AtomicFile
 import com.tony.appbooster.data.util.CompileModeSupportParser
 import com.tony.appbooster.data.util.DexoptStatusParser
@@ -21,6 +23,7 @@ import com.tony.appbooster.domain.model.common.requireSuccess
 import com.tony.appbooster.domain.model.performance.*
 import com.tony.appbooster.domain.repository.PerformanceRepository
 import com.tony.appbooster.domain.service.ShellOperationCoordinator
+import com.tony.appbooster.domain.service.StorageCapacityProvider
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,8 +40,14 @@ class PerformanceRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
     private val shell: AdbShellDataSource,
     private val coordinator: ShellOperationCoordinator,
+    private val storageCapacityProvider: StorageCapacityProvider,
     @AdbIoDispatcher private val io: CoroutineDispatcher
 ) : PerformanceRepository {
+    private companion object {
+        const val ANDROID_UIDS_PER_USER = 100_000
+        const val PRIMARY_ANDROID_USER_ID = 0
+    }
+
     private val state = MutableStateFlow<PerformanceSession?>(null)
     override val session = state.asStateFlow()
     private val stateMutex = Mutex()
@@ -48,6 +57,8 @@ class PerformanceRepositoryImpl @Inject constructor(
     override suspend fun load() = withContext(io) {
         stateMutex.withLock {
             if (!loaded) {
+                // A corrupt capture must not prevent selecting a fresh session.
+                loaded = true
                 if (file.baseFile.exists()) {
                     val saved = PerformanceSessionJson.decode(file.readFully().toString(Charsets.UTF_8))
                     state.value = if (saved.activeOperation != null) saved.copy(activeOperation = null,
@@ -60,6 +71,9 @@ class PerformanceRepositoryImpl @Inject constructor(
 
     @Suppress("DEPRECATION")
     override suspend fun apps(): List<MeasurementApp> = withContext(io) {
+        check(Process.myUid() / ANDROID_UIDS_PER_USER == PRIMARY_ANDROID_USER_ID) {
+            "Performance measurement is available only in the primary Android profile. Open OptiDroid outside work profiles or Secure Folder."
+        }
         val pm = context.packageManager
         pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
             .mapNotNull { resolved ->
@@ -83,7 +97,7 @@ class PerformanceRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun execute(action: String, sessionId: Long): Result<Unit> = withContext(io) {
+    override suspend fun execute(action: String, sessionId: Long, operationId: String): Result<Unit> = withContext(io) {
         load()
         // Fail outside session mutation if another workflow already owns the shell.
         try {
@@ -91,6 +105,7 @@ class PerformanceRepositoryImpl @Inject constructor(
                 val initial = requireNotNull(state.value) { "Select an app first." }
                 require(initial.id == sessionId && initial.activeOperation == null) { "This measurement session changed." }
                 require(action in setOf("BEFORE", "COMPILE", "AFTER"))
+                check(initial.lastOperationId != operationId) { "This operation already started. Repeat the interrupted phase explicitly." }
                 validateIdentity(initial.app)
                 if (action != "BEFORE") require(initial.before != null) { "Capture the baseline first." }
                 if (action == "AFTER") require(initial.compilation?.exitCode == 0) { "Compile the selected app successfully first." }
@@ -99,17 +114,16 @@ class PerformanceRepositoryImpl @Inject constructor(
                     "BEFORE" -> initial.copy(before = null, compilation = null, after = null)
                     "COMPILE" -> initial.copy(compilation = null, after = null)
                     else -> initial.copy(after = null)
-                }.copy(activeOperation = action, partialSamples = emptyList(), message = null)
+                }.copy(activeOperation = action, partialSamples = emptyList(), message = null, lastOperationId = operationId)
                 save(next)
                 try {
                     if (action == "COMPILE") compile(next) else capture(next, action)
                     save(requireNotNull(state.value).copy(activeOperation = null, partialSamples = emptyList()))
                 } catch (cancel: CancellationException) {
-                    withContext(NonCancellable) { save(requireNotNull(state.value).copy(activeOperation = null,
-                        message = "Stopped. No further launches will run; incomplete samples are not compared.")) }
+                    withContext(NonCancellable) { finishWithError("Stopped. No further launches will run; incomplete samples are not compared.") }
                     throw cancel
                 } catch (error: Exception) {
-                    save(requireNotNull(state.value).copy(activeOperation = null, message = error.message ?: "Measurement failed."))
+                    finishWithError(error.message ?: "Measurement failed.")
                     throw error
                 }
             }
@@ -118,18 +132,34 @@ class PerformanceRepositoryImpl @Inject constructor(
         catch (error: Exception) { Result.failure(error) }
     }
 
-    private suspend fun validateIdentity(app: MeasurementApp) {
-        require(apps().any { it == app }) { "App version or launcher changed. Start a new baseline." }
+    @Suppress("DEPRECATION")
+    private fun validateIdentity(app: MeasurementApp) {
+        check(Process.myUid() / ANDROID_UIDS_PER_USER == PRIMARY_ANDROID_USER_ID) {
+            "Performance measurement requires the primary Android profile."
+        }
+        val pm = context.packageManager
+        val info = pm.getPackageInfo(app.packageName, 0)
+        val version = if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
+        val component = requireNotNull(ComponentName.unflattenFromString(app.component))
+        val activity = pm.getActivityInfo(component, 0)
+        require(app.versionCode == version && app.lastUpdateTime == info.lastUpdateTime &&
+            activity.enabled && activity.exported && activity.applicationInfo.enabled) {
+            "App version or launcher changed. Select the app again and capture a new baseline."
+        }
     }
 
     private suspend fun capture(current: PerformanceSession, action: String) {
         val start = System.currentTimeMillis()
         val uptime = SystemClock.elapsedRealtime()
+        val captureBootCount = bootCount()
         val art = artVersion()
         if (action == "AFTER") {
             val before = requireNotNull(current.before)
             require(before.buildFingerprint == Build.FINGERPRINT && before.artVersion == art) {
                 "Android or ART changed. Start a new baseline."
+            }
+            require(before.bootCount == null || captureBootCount == null || before.bootCount == captureBootCount) {
+                "Device restarted after the baseline. Capture a new baseline."
             }
         }
         val filter = packageFilter(current.app.packageName)
@@ -153,7 +183,8 @@ class PerformanceRepositoryImpl @Inject constructor(
         }
         validateIdentity(current.app)
         check(artVersion() == art) { "ART changed during capture. Repeat with a fresh baseline." }
-        val phase = MeasurementPhase(current.app, Build.FINGERPRINT, art, start, System.currentTimeMillis(), uptime, samples, filter)
+        check(captureBootCount == null || bootCount() == captureBootCount) { "Boot identity changed during capture. Start a new baseline." }
+        val phase = MeasurementPhase(current.app, Build.FINGERPRINT, art, start, System.currentTimeMillis(), uptime, samples, filter, captureBootCount)
         phase.statistics // refuse incomplete/invalid phases before committing
         save(requireNotNull(state.value).let { if (action == "BEFORE") it.copy(before = phase) else it.copy(after = phase) })
     }
@@ -166,6 +197,13 @@ class PerformanceRepositoryImpl @Inject constructor(
         val support = CompileModeSupportParser.parse(help)
         check("speed" in support.supportedFilters && support.supportsFullScope && support.supportsVerboseCompile) {
             "This Android build does not advertise speed, --full and verbose compile evidence. Measurement compilation is unavailable."
+        }
+        val storage = storageCapacityProvider.snapshot()
+        check(!storage.isBelowReserve) {
+            "Storage guard: %.2f GiB available; %.2f GiB must remain free.".format(
+                storage.availableBytes.toDouble() / (1024L * 1024L * 1024L),
+                storage.reserveBytes.toDouble() / (1024L * 1024L * 1024L)
+            )
         }
         val cmd = ShellCommandSpec.PackageCompile(current.app.packageName, "speed", force = false, full = true, verbose = true)
         val start = System.currentTimeMillis()
@@ -198,12 +236,23 @@ class PerformanceRepositoryImpl @Inject constructor(
             power.isPowerSaveMode, power.isInteractive)
     }
 
+    private fun bootCount(): Int? = runCatching {
+        Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT, -1).takeIf { it >= 0 }
+    }.getOrNull()
+
     @Suppress("DEPRECATION")
     private fun artVersion(): String = listOf("com.google.android.art", "com.android.art").firstNotNullOfOrNull { name ->
         try { context.packageManager.getPackageInfo(name, if (Build.VERSION.SDK_INT >= 29) PackageManager.MATCH_APEX else 0)
             .let { "${it.packageName}:${it.versionName}:${if (Build.VERSION.SDK_INT >= 28) it.longVersionCode else it.versionCode.toLong()}" }
         } catch (_: PackageManager.NameNotFoundException) { null }
     } ?: "unavailable"
+
+    private fun finishWithError(message: String) {
+        val terminal = requireNotNull(state.value).copy(activeOperation = null, message = message)
+        try { save(terminal) } catch (_: Exception) {
+            state.value = terminal.copy(message = "$message The latest state could not be saved; export it before closing the app.")
+        }
+    }
 
     private fun save(value: PerformanceSession) {
         val atomic = file

@@ -32,28 +32,38 @@ class PerformanceViewModel @Inject constructor(
     init {
         updateUiData(PerformanceUiModel())
         viewModelScope.launch(exceptionHandler) {
-            repository.load()
+            try { repository.load() } catch (cancel: CancellationException) { throw cancel }
+            catch (_: Exception) { updateUiData(current().copy(message = "Saved capture could not be read. Select an app to start a new session.")) }
             updateUiData(current().copy(apps = repository.apps()))
             combine(repository.session, work.getWorkInfosForUniqueWorkFlow(PerformanceWorker.WORK_NAME)) { session, infos ->
                 val active = infos.any { !it.state.isFinished }
-                val latest = infos.firstOrNull()
+                val latest = infos.maxByOrNull { info ->
+                    info.tags.firstOrNull { it.startsWith("requested:") }?.substringAfter(':')?.toLongOrNull() ?: 0L
+                }
                 val error = latest?.takeIf { it.state == WorkInfo.State.FAILED }?.outputData?.getString("error")
                 current().copy(session = session, busy = active || session?.activeOperation != null,
-                    message = session?.message ?: error)
+                    message = session?.message ?: error ?: current().message)
             }.collect { updateUiData(it) }
         }
     }
     override fun handleEvent(event: Unit) = Unit
     private fun current() = uiState.value.data ?: PerformanceUiModel()
+    /** Refresh identities after app updates before the chooser is opened. */
+    fun refreshApps() = viewModelScope.launch(exceptionHandler) {
+        if (!current().busy) updateUiData(current().copy(apps = repository.apps()))
+    }
     /** Select a fresh app identity and discard the previous comparison explicitly. */
-    fun select(app: MeasurementApp) = viewModelScope.launch(exceptionHandler) { repository.select(app) }
+    fun select(app: MeasurementApp) = viewModelScope.launch(exceptionHandler) {
+        repository.select(app)
+        updateUiData(current().copy(message = null))
+    }
     /** Run exactly one user-requested phase; launching another app is intentional. */
     fun start(action: String) {
         val session = current().session ?: return
         if (current().busy) return
         updateUiData(current().copy(busy = true, message = null))
         work.enqueueUniqueWork(PerformanceWorker.WORK_NAME, ExistingWorkPolicy.KEEP,
-            OneTimeWorkRequestBuilder<PerformanceWorker>().setInputData(workDataOf("action" to action, "sessionId" to session.id)).build())
+            OneTimeWorkRequestBuilder<PerformanceWorker>().addTag("requested:${System.currentTimeMillis()}").setInputData(workDataOf("action" to action, "sessionId" to session.id)).build())
     }
     /** Stop future samples after the currently executing shell call returns. */
     fun stop() { work.cancelUniqueWork(PerformanceWorker.WORK_NAME) }

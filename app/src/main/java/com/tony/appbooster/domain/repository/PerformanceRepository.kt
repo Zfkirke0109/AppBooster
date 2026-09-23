@@ -14,7 +14,7 @@ interface PerformanceRepository {
     /** Start a new explicitly selected app session, replacing the previous capture. */
     suspend fun select(app: MeasurementApp)
     /** Execute BEFORE, COMPILE or AFTER for the expected session, recording failures. */
-    suspend fun execute(action: String, sessionId: Long): Result<Unit>
+    suspend fun execute(action: String, sessionId: Long, operationId: String): Result<Unit>
     /** Export the raw samples and compiler evidence as versioned JSON. */
     suspend fun export(): String
 }

@@ -29,23 +29,23 @@ fun PerformanceScreen(viewModel: PerformanceViewModel = hiltViewModel()) {
         if (uri != null) viewModel.export(uri)
     }
     AppBaseScreen(uiState = state) { model ->
-        PerformanceContent(model, viewModel::select, viewModel::start, viewModel::stop) {
-            export.launch("Galaxy-OptiDroid-performance-${model.session?.id}.json")
-        }
+        PerformanceContent(model, viewModel::select, viewModel::start, viewModel::stop,
+            onExport = { export.launch("Galaxy-OptiDroid-performance-${model.session?.id}.json") },
+            onRefreshApps = { viewModel.refreshApps() })
     }
 }
 
 /** Stateless selected-app before/compile/after flow and observed measurements. */
 @Composable
 fun PerformanceContent(model: PerformanceUiModel, onSelect: (MeasurementApp) -> Unit,
-    onStart: (String) -> Unit, onStop: () -> Unit, onExport: () -> Unit) {
+    onStart: (String) -> Unit, onStop: () -> Unit, onExport: () -> Unit, onRefreshApps: () -> Unit = {}) {
     var selecting by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf<String?>(null) }
     val session = model.session
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text(stringResource(R.string.performance_title), style = MaterialTheme.typography.headlineLarge)
         Text(stringResource(R.string.performance_intro), style = MaterialTheme.typography.bodyMedium)
-        FilledTonalButton(onClick = { selecting = true }, enabled = !model.busy) {
+        FilledTonalButton(onClick = { onRefreshApps(); selecting = true }, enabled = !model.busy) {
             Text(session?.app?.label ?: stringResource(R.string.performance_select))
         }
         session?.let { s ->

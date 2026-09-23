@@ -28,10 +28,11 @@ internal object PerformanceSessionJson {
             s.getLong("capturedAtMs"), readConditions(s.getJSONObject("conditionsBefore")), readConditions(s.getJSONObject("conditionsAfter")), s.getString("rawOutput")) } }
     private fun phase(p: MeasurementPhase?) = p?.let { obj("app" to app(p.app), "buildFingerprint" to p.buildFingerprint,
         "artVersion" to p.artVersion, "startedAtMs" to p.startedAtMs, "finishedAtMs" to p.finishedAtMs,
-        "elapsedRealtimeMs" to p.elapsedRealtimeMs, "samples" to samples(p.samples), "compilerFilter" to p.compilerFilter) }
+        "elapsedRealtimeMs" to p.elapsedRealtimeMs, "samples" to samples(p.samples), "compilerFilter" to p.compilerFilter,
+        "bootCount" to p.bootCount) }
     private fun readPhase(p: JSONObject?) = p?.let { MeasurementPhase(readApp(p.getJSONObject("app")), p.getString("buildFingerprint"),
         p.getString("artVersion"), p.getLong("startedAtMs"), p.getLong("finishedAtMs"), p.getLong("elapsedRealtimeMs"),
-        readSamples(p.getJSONArray("samples")), p.stringOrNull("compilerFilter")) }
+        readSamples(p.getJSONArray("samples")), p.stringOrNull("compilerFilter"), p.longOrNull("bootCount")?.toInt()) }
     private fun compilation(c: MeasurementCompile?) = c?.let { obj("startedAtMs" to c.startedAtMs, "finishedAtMs" to c.finishedAtMs,
         "durationMs" to c.durationMs, "command" to c.command, "exitCode" to c.exitCode, "outcome" to c.outcome,
         "actualFilter" to c.actualFilter, "artSizeBeforeBytes" to c.artSizeBeforeBytes, "artSizeAfterBytes" to c.artSizeAfterBytes,
@@ -43,11 +44,11 @@ internal object PerformanceSessionJson {
         "protocol" to "Five am start -S -W process-cold launches per phase; 3 second settling interval; no cache/profile reset",
         "interpretation" to "Observed startup change, not proof of dex2oat-only causation. First-frame launch time is not full usability, FPS or battery savings.",
         "app" to app(s.app), "before" to phase(s.before), "compilation" to compilation(s.compilation), "after" to phase(s.after),
-        "activeOperation" to s.activeOperation, "partialSamples" to samples(s.partialSamples), "message" to s.message).toString(2)
+        "activeOperation" to s.activeOperation, "partialSamples" to samples(s.partialSamples), "message" to s.message, "lastOperationId" to s.lastOperationId).toString(2)
     fun decode(raw: String): PerformanceSession = JSONObject(raw).let { s ->
         require(s.getInt("schemaVersion") == 1)
         PerformanceSession(s.getLong("sessionId"), readApp(s.getJSONObject("app")), readPhase(s.optJSONObject("before")),
             readCompile(s.optJSONObject("compilation")), readPhase(s.optJSONObject("after")), s.stringOrNull("activeOperation"),
-            readSamples(s.getJSONArray("partialSamples")), s.stringOrNull("message"))
+            readSamples(s.getJSONArray("partialSamples")), s.stringOrNull("message"), s.stringOrNull("lastOperationId"))
     }
 }

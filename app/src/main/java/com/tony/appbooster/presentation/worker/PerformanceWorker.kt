@@ -15,6 +15,7 @@ import com.tony.appbooster.domain.repository.PerformanceRepository
 import com.tony.appbooster.presentation.activity.MainActivity
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.CancellationException
 
 /** Keeps an explicitly started capture alive while its target activity is in front. */
 @HiltWorker
@@ -22,7 +23,15 @@ class PerformanceWorker @AssistedInject constructor(
     @Assisted context: Context, @Assisted parameters: WorkerParameters,
     private val repository: PerformanceRepository
 ) : CoroutineWorker(context, parameters) {
-    override suspend fun doWork(): Result {
+    override suspend fun doWork(): Result = try {
+        performWork()
+    } catch (cancel: CancellationException) {
+        throw cancel
+    } catch (error: Exception) {
+        Result.failure(workDataOf("error" to (error.message ?: "Unable to start measurement").take(500)))
+    }
+
+    private suspend fun performWork(): Result {
         // Automatic retries could turn an interrupted phase into a different experiment.
         if (runAttemptCount > 0) return Result.failure(workDataOf("error" to "Capture interrupted. Repeat the phase explicitly."))
         val action = inputData.getString("action") ?: return Result.failure()
@@ -40,7 +49,7 @@ class PerformanceWorker @AssistedInject constructor(
             .build()
         setForeground(if (Build.VERSION.SDK_INT >= 29) ForegroundInfo(174, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
             else ForegroundInfo(174, notification))
-        return repository.execute(action, sessionId).fold({ Result.success() }, {
+        return repository.execute(action, sessionId, id.toString()).fold({ Result.success() }, {
             Result.failure(workDataOf("error" to (it.message ?: "Measurement failed").take(500)))
         })
     }
