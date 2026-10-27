@@ -12,6 +12,37 @@ import org.junit.Test
  */
 class ShellCommandSpecTest {
 
+    @Test
+    fun `background full compile is allowed without ISA or CPU overrides`() {
+        val command = ShellCommandSpec.PackageCompile(
+            "com.example.app", "speed", full = true, verbose = true, background = true
+        )
+
+        assertEquals(
+            listOf("cmd", "package", "compile", "-m", "speed", "-f", "--full", "-v",
+                "-p", "PRIORITY_BACKGROUND", "com.example.app"),
+            command.argv
+        )
+        assertTrue(ShellCommandSpec.isAllowedArgv(command.argv))
+    }
+
+    @Test
+    fun `priority allowlist rejects malformed or elevated priority requests`() {
+        val prefix = listOf("cmd", "package", "compile", "-m", "speed")
+        val packageName = "com.example.app"
+        listOf(
+            listOf("-p", "PRIORITY_BOOT"),
+            listOf("-p"),
+            listOf("PRIORITY_BACKGROUND"),
+            listOf("-p", "PRIORITY_BACKGROUND", "-p", "PRIORITY_BACKGROUND"),
+            listOf("-p", "PRIORITY_BACKGROUND;reboot"),
+            listOf("--cpu-set=0-5"),
+            listOf("--instruction-set-variant=kryo300")
+        ).forEach { options ->
+            assertFalse(options.toString(), ShellCommandSpec.isAllowedArgv(prefix + options + packageName))
+        }
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun `given everything compile filter when command created then rejects unsupported mode`() {
         ShellCommandSpec.PackageCompile(

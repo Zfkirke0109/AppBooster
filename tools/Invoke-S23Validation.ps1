@@ -18,6 +18,10 @@ param(
 
     [string]$ApkPath,
 
+    # Preserve the original S23 default; pass SM-S948U for the connected S26 Ultra.
+    [ValidatePattern("^SM-S[0-9A-Z]+$")]
+    [string]$ExpectedModel = "SM-S918U1",
+
     [string]$ExpectedSignerSha256 = "BB93CAB28F64A1CD14C92F771A91D4E000498448723CFF3C6571A48CC6715723"
 )
 
@@ -25,7 +29,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $script:PackageName = "com.zfkirke0109.galaxyoptidroid"
-$script:ExpectedModel = "SM-S918U1"
+$script:ExpectedModel = $ExpectedModel
 $script:RepoRoot = Split-Path -Parent $PSScriptRoot
 $script:ValidationRoot = Join-Path $script:RepoRoot "validation"
 $script:LatestSessionFile = Join-Path $script:ValidationRoot "latest-session.txt"
@@ -293,6 +297,13 @@ function Save-DeviceSnapshot {
     $snapshot = Join-Path $SessionDirectory ("snapshot-{0}-{1}" -f $Label, (Get-Date -Format "yyyyMMdd_HHmmss"))
     New-Item -ItemType Directory -Path $snapshot | Out-Null
 
+    # Hardware facts only. Do not export serial numbers or the full getprop table.
+    $hardwareCommand = @'
+for p in ro.product.model ro.product.device ro.board.platform ro.soc.manufacturer ro.soc.model ro.product.cpu.abilist ro.build.version.sdk ro.build.version.oneui dalvik.vm.isa.arm64.variant dalvik.vm.isa.arm64.features dalvik.vm.dex2oat-threads dalvik.vm.dex2oat-cpu-set dalvik.vm.background-dex2oat-threads dalvik.vm.background-dex2oat-cpu-set; do printf '%s=' "$p"; getprop "$p"; done
+printf 'pageSize='; getconf PAGESIZE
+for d in /sys/devices/system/cpu/cpufreq/policy*; do printf '\n%s\n' "$d"; for n in related_cpus cpuinfo_max_freq; do if [ -r "$d/$n" ]; then printf '%s=' "$n"; cat "$d/$n"; fi; done; done
+'@
+    Write-AdbEvidence -SessionDirectory $snapshot -FileName "hardware.txt" -Arguments @("shell", $hardwareCommand) | Out-Null
     Write-AdbEvidence -SessionDirectory $snapshot -FileName "package.txt" -Arguments @("shell", "dumpsys", "package", $script:PackageName) | Out-Null
     Write-AdbEvidence -SessionDirectory $snapshot -FileName "services.txt" -Arguments @("shell", "dumpsys", "activity", "services", $script:PackageName) | Out-Null
     Write-AdbEvidence -SessionDirectory $snapshot -FileName "exit-info.txt" -Arguments @("shell", "dumpsys", "activity", "exit-info", $script:PackageName) | Out-Null
@@ -424,11 +435,11 @@ switch ($Action) {
             }
         }
 
-        Invoke-AdbCommand -Arguments @("logcat", "-c") | Out-Null
+        # Retain existing buffers. Filter at collection instead of exporting other apps' logs.
         $stdout = Join-Path $sessionDirectory "logcat-full.txt"
         $stderr = Join-Path $sessionDirectory "logcat-stderr.txt"
         $capture = Start-Process -FilePath $script:AdbPath `
-            -ArgumentList @("-s", $script:DeviceSerial, "logcat", "-v", "threadtime") `
+            -ArgumentList @("-s", $script:DeviceSerial, "logcat", "-T", "1", "-v", "threadtime", "OptiDroidART:V", "ShellService:V", "AdbShellClientShizuku:V", "OptiDroidWorkerNotify:V", "*:S") `
             -RedirectStandardOutput $stdout `
             -RedirectStandardError $stderr `
             -WindowStyle Hidden `

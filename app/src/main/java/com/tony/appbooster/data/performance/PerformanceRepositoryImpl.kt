@@ -205,7 +205,10 @@ class PerformanceRepositoryImpl @Inject constructor(
                 storage.reserveBytes.toDouble() / (1024L * 1024L * 1024L)
             )
         }
-        val cmd = ShellCommandSpec.PackageCompile(current.app.packageName, "speed", force = false, full = true, verbose = true)
+        val cmd = ShellCommandSpec.PackageCompile(
+            current.app.packageName, "speed", force = false, full = true, verbose = true,
+            background = support.supportsBackgroundPriority
+        )
         val start = System.currentTimeMillis()
         val elapsed = SystemClock.elapsedRealtime()
         val result = shell.executeCommandDetailed(cmd).getOrThrow()

@@ -683,9 +683,18 @@ class AdbRepositoryImpl @Inject constructor(
     private suspend fun resolveCompileSupportIfNeeded(
         mode: AppOptimizationType
     ): CompileModeSupportSnapshot? {
-        if (!mode.requiresRuntimeModeSupportCheck && !mode.useFullDexoptScope) return null
-
-        val support = queryCompileModeSupport()
+        val requiresSupport = mode.requiresRuntimeModeSupportCheck || mode.useFullDexoptScope
+        val support = try {
+            queryCompileModeSupport().takeIf { requiresSupport || it.supportedFilters.isNotEmpty() }
+                ?: return null
+        } catch (canceled: CancellationException) {
+            throw canceled
+        } catch (exception: Exception) {
+            // Legacy builds may not expose help. Their established basic command remains usable.
+            if (requiresSupport) throw exception
+            logger.addLog("Compile help unavailable; keeping platform default priority.")
+            return null
+        }
         val supportLog = listOf("speed-profile", "speed", "everything")
             .joinToString("\n") { candidate ->
                 val status = if (candidate in support.supportedFilters) "supported" else "unsupported"
@@ -693,15 +702,25 @@ class AdbRepositoryImpl @Inject constructor(
             }
         logger.addLog("Compile mode support:\n$supportLog")
         logger.addLogEntry(LogEntryType.INFO, "Compile mode support", detail = supportLog)
+        logger.addLog(
+            if (support.supportsBackgroundPriority) {
+                "ART background priority enabled; ISA, CPU affinity and threads remain platform-managed."
+            } else {
+                "ART priority, ISA, CPU affinity and threads remain platform-managed."
+            }
+        )
         return support
     }
 
     private suspend fun queryCompileModeSupport(): CompileModeSupportSnapshot {
-        val compileHelp = shellDataSource.executeCommandDetailed(ShellCommandSpec.PackageCompileHelp)
-            .getOrNull()
+        val compileHelpAttempt = shellDataSource.executeCommandDetailed(ShellCommandSpec.PackageCompileHelp)
+        val helpFailure = compileHelpAttempt.exceptionOrNull()
+        if (helpFailure is CancellationException) throw helpFailure
+        val compileHelp = compileHelpAttempt.getOrNull()
 
         if (compileHelp?.isSuccess == true) {
-            return CompileModeSupportParser.parse(compileHelp.stdout)
+            val support = CompileModeSupportParser.parse(compileHelp.stdout)
+            if (support.supportedFilters.isNotEmpty()) return support
         }
 
         val packageHelp = shellDataSource.executeCommandDetailed(ShellCommandSpec.PackageHelp)
@@ -1200,7 +1219,8 @@ class AdbRepositoryImpl @Inject constructor(
                 mode = compileMode,
                 force = true,
                 full = mode.useFullDexoptScope,
-                verbose = compileSupport?.supportsVerboseCompile == true
+                verbose = compileSupport?.supportsVerboseCompile == true,
+                background = compileSupport?.supportsBackgroundPriority == true
             )
             val storageBefore = storageCapacityProvider.snapshot()
             ensureStorageAllowsOptimization(storageBefore)

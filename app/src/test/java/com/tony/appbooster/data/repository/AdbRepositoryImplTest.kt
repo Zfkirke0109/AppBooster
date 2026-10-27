@@ -617,6 +617,82 @@ class AdbRepositoryImplTest {
     }
 
     @Test
+    fun `S26 help enables background priority for basic profile optimization and records evidence`() = runTest {
+        val packageName = "com.example.s26"
+        val step = optimizationStep(id = 25L, runId = 550L, stepIndex = 0, packageName = packageName)
+        val help = javaClass.getResource("/s26-package-compile.help")?.readText()
+            ?: error("Missing S26 help fixture")
+        val command = ShellCommandSpec.PackageCompile(
+            packageName, "speed-profile", verbose = true, background = true
+        )
+        coEvery { shellDataSource.executeCommandDetailed(ShellCommandSpec.PackageCompileHelp) } returns
+            Result.success(ShellCommandResult(0, "Success", ""))
+        coEvery { shellDataSource.executeCommandDetailed(ShellCommandSpec.PackageHelp) } returns
+            Result.success(ShellCommandResult(0, help, ""))
+        coEvery { packageQuery.queryInstalledPackages() } returns listOf(packageName)
+        coEvery { optimizationStepDao.findLatestResumableRunId("SPEED_PROFILE", true) } returns null
+        coEvery { optimizationStepDao.getStepsForRun(any()) } returns listOf(step)
+        coEvery { compilationResolver.queryPackageCompilationInfo(packageName, "speed-profile") } returnsMany
+            listOf(compilationInfo(packageName, "verify"), compilationInfo(packageName, "speed-profile", false))
+        coEvery { shellDataSource.executeCommandDetailed(command) } returns
+            Result.success(ShellCommandResult(0, "Success", ""))
+        stubPackageDump(packageName, "speed-profile")
+
+        val result = repository.executeOptimizationCommand(AppOptimizationType.SPEED_PROFILE, true)
+
+        assertTrue(result is Resource.Success)
+        assertEquals(1, repository.optimizationProgress.value.optimizedSucceededCount)
+        coVerify(exactly = 1) {
+            telemetryRepository.recordStepStarted(step.id, command.displayCommand, any())
+        }
+    }
+
+    @Test
+    fun `unavailable optional help preserves basic command and successful optimization`() = runTest {
+        val packageName = "com.example.legacy"
+        val step = optimizationStep(id = 26L, runId = 551L, stepIndex = 0, packageName = packageName)
+        val command = ShellCommandSpec.PackageCompile(packageName, "speed-profile")
+        coEvery { shellDataSource.executeCommandDetailed(ShellCommandSpec.PackageCompileHelp) } returns
+            Result.failure(IllegalStateException("Help not available"))
+        coEvery { shellDataSource.executeCommandDetailed(ShellCommandSpec.PackageHelp) } returns
+            Result.failure(IllegalStateException("Help not available"))
+        coEvery { packageQuery.queryInstalledPackages() } returns listOf(packageName)
+        coEvery { optimizationStepDao.findLatestResumableRunId("SPEED_PROFILE", true) } returns null
+        coEvery { optimizationStepDao.getStepsForRun(any()) } returns listOf(step)
+        coEvery { compilationResolver.queryPackageCompilationInfo(packageName, "speed-profile") } returnsMany
+            listOf(compilationInfo(packageName, "verify"), compilationInfo(packageName, "speed-profile", false))
+        coEvery { shellDataSource.executeCommandDetailed(command) } returns
+            Result.success(ShellCommandResult(0, "Success", ""))
+        stubPackageDump(packageName, "speed-profile")
+
+        assertTrue(repository.executeOptimizationCommand(AppOptimizationType.SPEED_PROFILE, true) is Resource.Success)
+        assertEquals(1, repository.optimizationProgress.value.optimizedSucceededCount)
+        coVerify(exactly = 1) {
+            telemetryRepository.recordStepStarted(step.id, command.displayCommand, any())
+        }
+    }
+
+    @Test
+    fun `wrapped cancellation during capability probe stops optimization before compilation`() = runTest {
+        coEvery { optimizationStepDao.findLatestResumableRunId("SPEED_PROFILE", true) } returns null
+        coEvery { shellDataSource.executeCommandDetailed(ShellCommandSpec.PackageCompileHelp) } returns
+            Result.failure(CancellationException("Probe canceled"))
+
+        var canceled = false
+        try {
+            repository.executeOptimizationCommand(AppOptimizationType.SPEED_PROFILE, true)
+        } catch (_: CancellationException) {
+            canceled = true
+        }
+
+        assertTrue(canceled)
+        assertTrue(repository.optimizationProgress.value.result is OptimizationResult.Canceled)
+        coVerify(exactly = 0) {
+            shellDataSource.executeCommandDetailed(match { it is ShellCommandSpec.PackageCompile })
+        }
+    }
+
+    @Test
     fun `given full dex2oat speed mode when optimizing then compiles all eligible packages without full scope`() = runTest {
         val first = "com.example.one"
         val second = "com.example.two"

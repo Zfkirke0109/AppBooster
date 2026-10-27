@@ -16,6 +16,20 @@ import org.junit.Test
 class DexoptStatusParserTest {
 
     @Test
+    fun `live S26 Android 17 profile compilation is verified with complete size evidence`() {
+        val output = javaClass.getResource("/s26-profile-compile.art")?.readText()
+            ?: error("Missing S26 ART fixture")
+
+        val result = DexoptStatusParser.classifyCompileResult("speed-profile", 0, output)
+
+        assertEquals(OptimizationStepOutcome.VERIFIED_REQUESTED_FILTER, result.outcome)
+        assertEquals("speed-profile", result.art.actualCompilerFilter)
+        assertEquals("PERFORMED", result.art.finalStatus)
+        assertEquals(9_070_712L, result.art.sizeBytes)
+        assertEquals(3_853_952L, result.art.sizeBeforeBytes)
+    }
+
+    @Test
     fun `profile adjustment is not permanent because runtime profiles can change`() {
         val result = DexoptStatusParser.classifyCompileResult(
             "speed-profile", 0, "actualCompilerFilter=verify, status=PERFORMED"
