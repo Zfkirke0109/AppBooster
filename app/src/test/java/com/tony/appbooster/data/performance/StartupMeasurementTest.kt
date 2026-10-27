@@ -1,11 +1,26 @@
 package com.tony.appbooster.data.performance
 
 import com.tony.appbooster.domain.model.performance.LaunchStatistics
+import com.tony.appbooster.domain.model.performance.MeasurementCompile
 import org.junit.Assert.*
 import org.junit.Test
 
 class StartupMeasurementTest {
     private val valid = "Status: ok\nLaunchState: COLD\nActivity: com.example.app/.MainActivity\nThisTime: 390\nTotalTime: 420\nWaitTime: 430\nComplete"
+
+    @Test fun `ART failure at exit zero cannot authorize an after capture`() {
+        val evidence = MeasurementCompile(0, 1, 1, "compile", 0, "FAILED_OR_REFUSED",
+            "speed", null, null, "Final Status: FAILED", "")
+        assertFalse(evidence.isSuccessful)
+    }
+
+    @Test fun `successful and adjusted commands permit an after capture but shell failure does not`() {
+        val evidence = MeasurementCompile(0, 1, 1, "compile", 0, "VERIFIED_REQUESTED_FILTER",
+            "speed", null, null, "Final Status: PERFORMED", "")
+        assertTrue(evidence.isSuccessful)
+        assertTrue(evidence.copy(outcome = "OS_ADJUSTED_FILTER", actualFilter = "speed-profile").isSuccessful)
+        assertFalse(evidence.copy(exitCode = 1).isSuccessful)
+    }
 
     @Test fun `uses Android total launch time rather than shell wait time`() {
         val result = StartupOutputParser.parse(valid, "com.example.app")

@@ -108,7 +108,7 @@ class PerformanceRepositoryImpl @Inject constructor(
                 check(initial.lastOperationId != operationId) { "This operation already started. Repeat the interrupted phase explicitly." }
                 validateIdentity(initial.app)
                 if (action != "BEFORE") require(initial.before != null) { "Capture the baseline first." }
-                if (action == "AFTER") require(initial.compilation?.exitCode == 0) { "Compile the selected app successfully first." }
+                if (action == "AFTER") require(initial.compilation?.isSuccessful == true) { "Compile the selected app successfully first." }
                 // Stale results must disappear before a repeat operation can fail.
                 val next = when (action) {
                     "BEFORE" -> initial.copy(before = null, compilation = null, after = null)
@@ -205,17 +205,21 @@ class PerformanceRepositoryImpl @Inject constructor(
                 storage.reserveBytes.toDouble() / (1024L * 1024L * 1024L)
             )
         }
-        val cmd = ShellCommandSpec.PackageCompile(current.app.packageName, "speed", force = false, full = true, verbose = true)
+        val cmd = ShellCommandSpec.PackageCompile(
+            current.app.packageName, "speed", force = false, full = true, verbose = true,
+            background = support.supportsBackgroundPriority
+        )
         val start = System.currentTimeMillis()
         val elapsed = SystemClock.elapsedRealtime()
         val result = shell.executeCommandDetailed(cmd).getOrThrow()
         currentCoroutineContext().ensureActive()
-        val classified = DexoptStatusParser.classifyCompileResult("speed", result.exitCode, result.stdout)
+        val classified = DexoptStatusParser.classifyCompileResult("speed", result.exitCode, "${result.stdout}\n${result.stderr}")
         val evidence = MeasurementCompile(start, System.currentTimeMillis(), SystemClock.elapsedRealtime() - elapsed,
             cmd.displayCommand, result.exitCode, classified.outcome.name, classified.art.actualCompilerFilter,
             classified.art.sizeBeforeBytes, classified.art.sizeBytes, result.stdout, result.stderr)
         save(requireNotNull(state.value).copy(compilation = evidence))
         result.requireSuccess(cmd.displayCommand)
+        check(evidence.isSuccessful) { "Android reported a compilation failure. Review the captured result before retrying." }
         validateIdentity(current.app)
     }
 

@@ -73,12 +73,18 @@ sealed interface ShellCommandSpec {
         override val displayCommand: String = argv.joinToString(" ")
     }
 
+    /**
+     * Requests platform-managed dexopt without overriding the device ISA or CPU topology.
+     *
+     * @property background Use ART's background resource policy only after help advertises it.
+     */
     data class PackageCompile(
         val packageName: String,
         val mode: String,
         val force: Boolean = true,
         val full: Boolean = false,
-        val verbose: Boolean = false
+        val verbose: Boolean = false,
+        val background: Boolean = false
     ) : ShellCommandSpec {
         init {
             PackageNameValidator.requireValid(packageName)
@@ -94,6 +100,10 @@ sealed interface ShellCommandSpec {
             if (force) add("-f")
             if (full) add("--full")
             if (verbose) add("-v")
+            if (background) {
+                add("-p")
+                add("PRIORITY_BACKGROUND")
+            }
             add(packageName)
         }
         override val displayCommand: String = argv.joinToString(" ")
@@ -179,12 +189,18 @@ sealed interface ShellCommandSpec {
                 PackageNameValidator.isValid(argv[3])
 
         private fun isAllowedPackageCompile(argv: List<String>): Boolean {
-            if (argv.size !in 6..9) return false
+            if (argv.size !in 6..11) return false
             if (argv.take(5) != listOf("cmd", "package", "compile", "-m", argv[4])) return false
             if (argv[4] !in COMPILE_MODES) return false
 
-            val options = argv.subList(5, argv.lastIndex)
+            val options = argv.subList(5, argv.lastIndex).toMutableList()
             val packageName = argv.last()
+            val priorityIndex = options.indexOf("-p")
+            if (priorityIndex >= 0) {
+                if (options.getOrNull(priorityIndex + 1) != "PRIORITY_BACKGROUND") return false
+                options.removeAt(priorityIndex + 1)
+                options.removeAt(priorityIndex)
+            }
             val allowedOptions = setOf("-f", "--full", "-v")
             return options.all { it in allowedOptions } &&
                 options.distinct().size == options.size &&

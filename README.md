@@ -212,6 +212,18 @@ The installed Android package ID is `com.zfkirke0109.galaxyoptidroid`. The Kotli
 
 ## 🔨 Building
 
+### Galaxy S26 Ultra
+
+Version 1.8.0 adds capability-detected ART background priority and a validation
+baseline for the SM-S948U on Android 17/One UI 9. Android selects the Oryon ISA,
+CPU affinity and compiler thread policy. Older devices retain their supported
+command path. See [S26 validation](docs/s26-ultra-validation.md) and
+[ART research](docs/s26-ultra-art-research.md).
+
+Version 1.8.1 also rechecks the battery and thermal guard before each package
+compile. A batch pauses before starting the next compile if battery falls below
+35% or Android reports severe thermal status, retaining completed results.
+
 ### Prerequisites
 
 - **Android Studio Ladybug** (2024.3+) or newer

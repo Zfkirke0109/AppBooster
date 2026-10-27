@@ -1,0 +1,67 @@
+  compile [-r COMPILATION_REASON] [-m COMPILER_FILTER] [-p PRIORITY] [-f]
+      [--primary-dex] [--secondary-dex] [--include-dependencies] [--full]
+      [--split SPLIT_NAME] [--reset] [--force-merge-profile]
+      [--force-app-image-optional] [-v[:LOG_TAGS]]
+      [-a | PACKAGE_NAME]
+    Dexopt a package or all packages.
+    Options:
+      -a Dexopt all packages
+      -r Set the compiler filter and the priority based on the given
+         compilation reason.
+         Available options: 'first-boot', 'boot-after-ota',
+         'boot-after-mainline-update', 'install', 'bg-dexopt', 'cmdline'.
+      -m Set the target compiler filter. The filter actually used may be
+         different, e.g. 'speed-profile' without profiles present may result in
+         'verify' being used instead. If not specified, this defaults to the
+         value given by -r, or the system property 'pm.dexopt.cmdline'.
+         Available options (in descending order): 'speed', 'speed-profile',
+         'verify'.
+      -p Set the priority of the operation, which determines the resource usage
+         and the process priority. If not specified, this defaults to
+         the value given by -r, or 'PRIORITY_INTERACTIVE'.
+         Available options (in descending order): 'PRIORITY_BOOT',
+         'PRIORITY_INTERACTIVE_FAST', 'PRIORITY_INTERACTIVE',
+         'PRIORITY_BACKGROUND'.
+      -f Force dexopt, also when the compiler filter being applied is not
+         better than that of the current dexopt artifacts for a package.
+      --reset Reset the dexopt state of the package as if the package is newly
+         installed, but without any compilation. Clears current profiles and
+         reference profiles. External profiles (e.g., cloud profiles and
+         embedded profiles) are kept for future dexopt, but not used this time.
+         For primary dex files, all dexopt optimizations except compilation
+         (such as verification) are still performed, meaning dexopt artifacts
+         are regenerated if necessary. In the current version, this is
+         equivalent to dexopt with the compiler filter set to 'verify'.
+         For secondary dex files, no dexopt optimizations are performed,
+         meaning dexopt artifacts are deleted without regeneration, because
+         secondary dex files are supposed to be unknown at install time.
+         When this flag is set, all the other flags are ignored.
+         One of the use cases of this command is for app developers to get a
+         baseline for measuring performance improvements from compilation.
+      -v Verbose mode. This mode prints detailed results. If followed by
+         ':LOG_TAGS', it also sets the switches for advanced logging.
+         LOG_TAGS is a comma-separated list, where available options are in:
+         https://cs.android.com/search?q=s:^art::LogVerbosity$%20f:^art/libartbase/base/logging.h
+      --force-merge-profile Force merge profiles even if the difference between
+         before and after the merge is not significant.
+      --force-app-image-optional Forces generation of app images that are
+         purely optional at runtime. Only used with profile-based compilation.
+    Scope options:
+      --primary-dex Dexopt primary dex files only (all APKs that are installed
+        as part of the package, including the base APK and all other split
+        APKs).
+      --secondary-dex Dexopt secondary dex files only (APKs/JARs that the app
+        puts in its own data directory at runtime and loads with custom
+        classloaders).
+      --include-dependencies Include dependency packages (dependencies that are
+        declared by the app with <uses-library> tags and transitive
+        dependencies). This option can only be used together with
+        '--primary-dex' or '--secondary-dex'.
+      --full Dexopt all above. (Recommended)
+      --split SPLIT_NAME Only dexopt the given split. If SPLIT_NAME is an empty
+        string, only dexopt the base APK.
+        Tip: To pass an empty string, use a pair of quotes ("").
+        When this option is set, '--primary-dex', '--secondary-dex',
+        '--include-dependencies', '--full', and '-a' must not be set.
+      Note: If none of the scope options above are set, the scope defaults to
+      '--primary-dex --include-dependencies'.

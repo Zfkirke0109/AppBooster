@@ -49,6 +49,9 @@ class CompilationInfoResolver @Inject constructor(
      */
     private val cachedPackageDumps = mutableMapOf<String, String>()
 
+    // A metadata refresh does not add a shell option that this runtime explicitly rejected.
+    private var compileCheckUnsupported = false
+
     /**
      * Invalidates package metadata after compilation without inventing a compiler filter.
      *
@@ -186,6 +189,8 @@ class CompilationInfoResolver @Inject constructor(
         packageName: String,
         lastUpdateTimeMs: Long?
     ): AppCompilationInfo? {
+        if (compileCheckUnsupported) return null
+
         logger.addLogEntry(LogEntryType.ANALYZING, "Fallback: compile check",
             packageName = packageName, detail = "cmd package compile --check")
 
@@ -194,13 +199,20 @@ class CompilationInfoResolver @Inject constructor(
         )
         val check = checkResult.getOrNull()
 
+        if (check != null && CompileCheckSupport.isUnsupported(check)) {
+            compileCheckUnsupported = true
+            logger.addLogEntry(LogEntryType.INFO, "Compile check unsupported",
+                detail = "The platform rejected --check; keeping unresolved packages eligible.")
+            return null
+        }
+
         when {
             check == null -> logger.addLogEntry(LogEntryType.ERROR, "Compile check failed",
                 packageName = packageName, detail = checkResult.exceptionOrNull()?.message)
 
-            !check.isSuccess -> logger.addLogEntry(LogEntryType.INFO, "Compile check unsupported",
+            !check.isSuccess -> logger.addLogEntry(LogEntryType.ERROR, "Compile check failed",
                 packageName = packageName,
-                detail = check.stderr.trim().ifEmpty { "exitCode=${check.exitCode}" })
+                detail = check.stderr.trim().ifEmpty { check.stdout.trim() }.ifEmpty { "exitCode=${check.exitCode}" })
 
             else -> {
                 val output = check.stdout.trim()

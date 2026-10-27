@@ -53,7 +53,7 @@ fun PerformanceContent(model: PerformanceUiModel, onSelect: (MeasurementApp) -> 
             Text(stringResource(R.string.performance_protocol))
             Button(onClick = { confirm = "BEFORE" }, enabled = !model.busy) { Text(stringResource(R.string.performance_before)) }
             Button(onClick = { confirm = "COMPILE" }, enabled = !model.busy && s.before != null) { Text(stringResource(R.string.performance_compile)) }
-            Button(onClick = { confirm = "AFTER" }, enabled = !model.busy && s.compilation?.exitCode == 0) { Text(stringResource(R.string.performance_after)) }
+            Button(onClick = { confirm = "AFTER" }, enabled = !model.busy && s.compilation?.isSuccessful == true) { Text(stringResource(R.string.performance_after)) }
             if (model.busy) {
                 LinearProgressIndicator(Modifier.fillMaxWidth())
                 Text("${s.activeOperation ?: "Queued"} · ${s.partialSamples.size}/5 launch samples")

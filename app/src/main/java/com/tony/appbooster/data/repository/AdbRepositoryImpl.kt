@@ -683,9 +683,18 @@ class AdbRepositoryImpl @Inject constructor(
     private suspend fun resolveCompileSupportIfNeeded(
         mode: AppOptimizationType
     ): CompileModeSupportSnapshot? {
-        if (!mode.requiresRuntimeModeSupportCheck && !mode.useFullDexoptScope) return null
-
-        val support = queryCompileModeSupport()
+        val requiresSupport = mode.requiresRuntimeModeSupportCheck || mode.useFullDexoptScope
+        val support = try {
+            queryCompileModeSupport().takeIf { requiresSupport || it.supportedFilters.isNotEmpty() }
+                ?: return null
+        } catch (canceled: CancellationException) {
+            throw canceled
+        } catch (exception: Exception) {
+            // Legacy builds may not expose help. Their established basic command remains usable.
+            if (requiresSupport) throw exception
+            logger.addLog("Compile help unavailable; keeping platform default priority.")
+            return null
+        }
         val supportLog = listOf("speed-profile", "speed", "everything")
             .joinToString("\n") { candidate ->
                 val status = if (candidate in support.supportedFilters) "supported" else "unsupported"
@@ -693,15 +702,25 @@ class AdbRepositoryImpl @Inject constructor(
             }
         logger.addLog("Compile mode support:\n$supportLog")
         logger.addLogEntry(LogEntryType.INFO, "Compile mode support", detail = supportLog)
+        logger.addLog(
+            if (support.supportsBackgroundPriority) {
+                "ART background priority enabled; ISA, CPU affinity and threads remain platform-managed."
+            } else {
+                "ART priority, ISA, CPU affinity and threads remain platform-managed."
+            }
+        )
         return support
     }
 
     private suspend fun queryCompileModeSupport(): CompileModeSupportSnapshot {
-        val compileHelp = shellDataSource.executeCommandDetailed(ShellCommandSpec.PackageCompileHelp)
-            .getOrNull()
+        val compileHelpAttempt = shellDataSource.executeCommandDetailed(ShellCommandSpec.PackageCompileHelp)
+        val helpFailure = compileHelpAttempt.exceptionOrNull()
+        if (helpFailure is CancellationException) throw helpFailure
+        val compileHelp = compileHelpAttempt.getOrNull()
 
         if (compileHelp?.isSuccess == true) {
-            return CompileModeSupportParser.parse(compileHelp.stdout)
+            val support = CompileModeSupportParser.parse(compileHelp.stdout)
+            if (support.supportedFilters.isNotEmpty()) return support
         }
 
         val packageHelp = shellDataSource.executeCommandDetailed(ShellCommandSpec.PackageHelp)
@@ -1195,12 +1214,17 @@ class AdbRepositoryImpl @Inject constructor(
                 continue
             }
 
+            // Battery and thermal state can change while a long batch is running.
+            // Pause before starting another compile, preserving the pending step.
+            ensureDeviceGuardAllowsOptimization()
+
             val command = ShellCommandSpec.PackageCompile(
                 packageName = packageName,
                 mode = compileMode,
                 force = true,
                 full = mode.useFullDexoptScope,
-                verbose = compileSupport?.supportsVerboseCompile == true
+                verbose = compileSupport?.supportsVerboseCompile == true,
+                background = compileSupport?.supportsBackgroundPriority == true
             )
             val storageBefore = storageCapacityProvider.snapshot()
             ensureStorageAllowsOptimization(storageBefore)
@@ -1359,9 +1383,24 @@ class AdbRepositoryImpl @Inject constructor(
                     )
                     verificationUnavailableCount++
                 }
-                OptimizationStepOutcome.FAILED_OR_REFUSED -> error(
-                    "Nonzero compile results must be handled before ART verification"
-                )
+                OptimizationStepOutcome.FAILED_OR_REFUSED -> {
+                    optimizationStepDao.markFailed(
+                        id = step.id,
+                        exitCode = commandResult.exitCode,
+                        stdout = commandResult.stdout,
+                        stderr = commandResult.stderr.ifBlank { verification.reason },
+                        updatedAtMs = resultRecordedAtMs
+                    )
+                    logger.addLog("Failure: $packageName - ${verification.reason}")
+                    logger.addLogEntry(
+                        LogEntryType.ERROR,
+                        messageKey = LogMessageKey.OPTIMIZATION_FAILED_APP,
+                        packageName = packageName,
+                        detail = verification.reason
+                    )
+                    failedPackages += packageName
+                    failedCount++
+                }
             }
             recordOutcome(
                 step = step,
@@ -1472,11 +1511,12 @@ class AdbRepositoryImpl @Inject constructor(
     ): PackageCompileVerification {
         val combinedOutput = "${commandResult.stdout}\n${commandResult.stderr}"
         val parsedArt = DexoptStatusParser.parseArtCompileResult(combinedOutput)
+        val artFailure = parsedArt.failureStatus
         val hasContainerEvidence = combinedOutput.contains("DexContainerFileDexoptResult{")
         val verboseFilter = parsedArt.actualCompilerFilter
             ?: if (!hasContainerEvidence) DexoptStatusParser.parseCompilerFilterFromOutput(combinedOutput) else null
 
-        val dumpFilter = if (verboseFilter == null && !hasContainerEvidence) runCatching {
+        val dumpFilter = if (artFailure == null && verboseFilter == null && !hasContainerEvidence) runCatching {
             shellDataSource.executeCommandDetailed(ShellCommandSpec.PackageDump(packageName))
                 .getOrNull()
                 ?.takeIf { it.isSuccess }
@@ -1484,7 +1524,7 @@ class AdbRepositoryImpl @Inject constructor(
                 ?.takeUnless { it == "unknown-present" }
         }.getOrNull() else null
 
-        val resolverFilter = if (dumpFilter == null && verboseFilter == null && !hasContainerEvidence) {
+        val resolverFilter = if (artFailure == null && dumpFilter == null && verboseFilter == null && !hasContainerEvidence) {
             // Package state changed after compilation. Refresh resolver caches only
             // when direct package/verbose evidence could not verify the result.
             compilationResolver.resetCaches()
@@ -1498,6 +1538,7 @@ class AdbRepositoryImpl @Inject constructor(
         val actualFilter = verboseFilter ?: dumpFilter ?: resolverFilter
         val skipped = (parsedArt.finalStatus ?: parsedArt.status) == "SKIPPED"
         val outcome = when {
+            artFailure != null -> OptimizationStepOutcome.FAILED_OR_REFUSED
             skipped -> OptimizationStepOutcome.SKIPPED_NOT_APPLICABLE
             actualFilter == null -> OptimizationStepOutcome.VERIFICATION_UNAVAILABLE
             DexoptStatusParser.isRequestedFilterSatisfied(
@@ -1507,6 +1548,7 @@ class AdbRepositoryImpl @Inject constructor(
             else -> OptimizationStepOutcome.OS_ADJUSTED_FILTER
         }
         val source = when {
+            artFailure != null -> VERIFICATION_SOURCE_VERBOSE_OUTPUT
             verboseFilter != null -> VERIFICATION_SOURCE_VERBOSE_OUTPUT
             dumpFilter != null -> VERIFICATION_SOURCE_PACKAGE_DUMP
             resolverFilter != null -> VERIFICATION_SOURCE_RESOLVER
@@ -1522,6 +1564,7 @@ class AdbRepositoryImpl @Inject constructor(
             stableOsAdjusted = outcome == OptimizationStepOutcome.OS_ADJUSTED_FILTER &&
                 mode.requestedCompileMode == "speed" && !mode.useFullDexoptScope,
             reason = when {
+                outcome == OptimizationStepOutcome.FAILED_OR_REFUSED -> "ART reported $artFailure."
                 outcome == OptimizationStepOutcome.VERIFIED_REQUESTED_FILTER -> "Verified"
                 outcome == OptimizationStepOutcome.SKIPPED_NOT_APPLICABLE ->
                     "ART skipped this package as not applicable."

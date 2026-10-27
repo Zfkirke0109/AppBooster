@@ -158,6 +158,52 @@ class AdbRepositoryImplTest {
     }
 
     @Test
+    fun `ART failed with exit zero is counted as failure instead of verified success`() = runTest {
+        assertArtStatusIsRecordedAsFailure("FAILED")
+    }
+
+    @Test
+    fun `ART cancelled with exit zero is counted as failure instead of verified success`() = runTest {
+        assertArtStatusIsRecordedAsFailure("CANCELLED")
+    }
+
+    @Test
+    fun `ART canceled with exit zero is counted as failure instead of verified success`() = runTest {
+        assertArtStatusIsRecordedAsFailure("CANCELED")
+    }
+
+    private suspend fun assertArtStatusIsRecordedAsFailure(status: String) {
+        val pkg = "com.example.artfailure"
+        val step = optimizationStep(id = 92L, runId = 902L, stepIndex = 0, packageName = pkg)
+        val output = """
+            [$pkg]
+            DexContainerFileDexoptResult{actualCompilerFilter=speed, status=$status}
+            Final Status: $status
+        """.trimIndent()
+        coEvery { packageQuery.queryInstalledPackages() } returns listOf(pkg)
+        coEvery { optimizationStepDao.findLatestResumableRunId("ADVANCED_FULL_COMPILE", true) } returns null
+        coEvery { optimizationStepDao.getStepsForRun(any()) } returns listOf(step)
+        coEvery { compilationResolver.queryPackageCompilationInfo(pkg, "speed") } returns
+            compilationInfo(pkg, compilerFilter = "verify")
+        coEvery { shellDataSource.executeCommandDetailed(ShellCommandSpec.PackageCompileHelp) } returns
+            Result.success(ShellCommandResult(0, ONE_UI_85_PACKAGE_HELP, ""))
+        coEvery { shellDataSource.executeCommandDetailed(match { it is ShellCommandSpec.PackageCompile }) } returns
+            Result.success(ShellCommandResult(0, output, ""))
+
+        val result = repository.executeOptimizationCommand(AppOptimizationType.ADVANCED_FULL_COMPILE, true)
+
+        assertTrue(result is Resource.Success)
+        assertEquals(0, repository.optimizationProgress.value.optimizedSucceededCount)
+        assertEquals(1, repository.optimizationProgress.value.failedOrRefusedCount)
+        assertEquals(1, repository.optimizationProgress.value.processedCount)
+        assertEquals(OptimizationResult.CompletedWithIssues, repository.optimizationProgress.value.result)
+        coVerify(exactly = 1) {
+            optimizationStepDao.markFailed(step.id, 0, output, match { it.contains(status) }, any())
+        }
+        verify(exactly = 0) { compilationResolver.markOptimized(pkg) }
+    }
+
+    @Test
     fun `given compile command fails for one package when optimizing then continues and completes remaining packages`() = runTest {
         val goodPackage = "com.example.good"
         val failingPackage = "com.example.bad"
@@ -543,6 +589,16 @@ class AdbRepositoryImplTest {
     }
 
     @Test
+    fun `battery falling below guard mid run pauses before the next compile`() = runTest {
+        assertGuardPausesAfterFirstCompile(allowedDeviceGuardSnapshot(batteryPercent = 34))
+    }
+
+    @Test
+    fun `thermal becoming severe mid run pauses before the next compile`() = runTest {
+        assertGuardPausesAfterFirstCompile(allowedDeviceGuardSnapshot(thermalStatus = 3))
+    }
+
+    @Test
     fun `given storage is below reserve when optimization starts then pauses before compiling`() = runTest {
         coEvery { optimizationStepDao.findLatestResumableRunId("SPEED_PROFILE", true) } returns null
         every { storageCapacityProvider.snapshot() } returns StorageSnapshot(
@@ -614,6 +670,82 @@ class AdbRepositoryImplTest {
         assertEquals(1, repository.optimizationProgress.value.optimizedSucceededCount)
         coVerify(exactly = 1) { shellDataSource.executeCommandDetailed(ShellCommandSpec.PackageHelp) }
         coVerify(exactly = 1) { shellDataSource.executeCommandDetailed(expectedCommand) }
+    }
+
+    @Test
+    fun `S26 help enables background priority for basic profile optimization and records evidence`() = runTest {
+        val packageName = "com.example.s26"
+        val step = optimizationStep(id = 25L, runId = 550L, stepIndex = 0, packageName = packageName)
+        val help = javaClass.getResource("/s26-package-compile.help")?.readText()
+            ?: error("Missing S26 help fixture")
+        val command = ShellCommandSpec.PackageCompile(
+            packageName, "speed-profile", verbose = true, background = true
+        )
+        coEvery { shellDataSource.executeCommandDetailed(ShellCommandSpec.PackageCompileHelp) } returns
+            Result.success(ShellCommandResult(0, "Success", ""))
+        coEvery { shellDataSource.executeCommandDetailed(ShellCommandSpec.PackageHelp) } returns
+            Result.success(ShellCommandResult(0, help, ""))
+        coEvery { packageQuery.queryInstalledPackages() } returns listOf(packageName)
+        coEvery { optimizationStepDao.findLatestResumableRunId("SPEED_PROFILE", true) } returns null
+        coEvery { optimizationStepDao.getStepsForRun(any()) } returns listOf(step)
+        coEvery { compilationResolver.queryPackageCompilationInfo(packageName, "speed-profile") } returnsMany
+            listOf(compilationInfo(packageName, "verify"), compilationInfo(packageName, "speed-profile", false))
+        coEvery { shellDataSource.executeCommandDetailed(command) } returns
+            Result.success(ShellCommandResult(0, "Success", ""))
+        stubPackageDump(packageName, "speed-profile")
+
+        val result = repository.executeOptimizationCommand(AppOptimizationType.SPEED_PROFILE, true)
+
+        assertTrue(result is Resource.Success)
+        assertEquals(1, repository.optimizationProgress.value.optimizedSucceededCount)
+        coVerify(exactly = 1) {
+            telemetryRepository.recordStepStarted(step.id, command.displayCommand, any())
+        }
+    }
+
+    @Test
+    fun `unavailable optional help preserves basic command and successful optimization`() = runTest {
+        val packageName = "com.example.legacy"
+        val step = optimizationStep(id = 26L, runId = 551L, stepIndex = 0, packageName = packageName)
+        val command = ShellCommandSpec.PackageCompile(packageName, "speed-profile")
+        coEvery { shellDataSource.executeCommandDetailed(ShellCommandSpec.PackageCompileHelp) } returns
+            Result.failure(IllegalStateException("Help not available"))
+        coEvery { shellDataSource.executeCommandDetailed(ShellCommandSpec.PackageHelp) } returns
+            Result.failure(IllegalStateException("Help not available"))
+        coEvery { packageQuery.queryInstalledPackages() } returns listOf(packageName)
+        coEvery { optimizationStepDao.findLatestResumableRunId("SPEED_PROFILE", true) } returns null
+        coEvery { optimizationStepDao.getStepsForRun(any()) } returns listOf(step)
+        coEvery { compilationResolver.queryPackageCompilationInfo(packageName, "speed-profile") } returnsMany
+            listOf(compilationInfo(packageName, "verify"), compilationInfo(packageName, "speed-profile", false))
+        coEvery { shellDataSource.executeCommandDetailed(command) } returns
+            Result.success(ShellCommandResult(0, "Success", ""))
+        stubPackageDump(packageName, "speed-profile")
+
+        assertTrue(repository.executeOptimizationCommand(AppOptimizationType.SPEED_PROFILE, true) is Resource.Success)
+        assertEquals(1, repository.optimizationProgress.value.optimizedSucceededCount)
+        coVerify(exactly = 1) {
+            telemetryRepository.recordStepStarted(step.id, command.displayCommand, any())
+        }
+    }
+
+    @Test
+    fun `wrapped cancellation during capability probe stops optimization before compilation`() = runTest {
+        coEvery { optimizationStepDao.findLatestResumableRunId("SPEED_PROFILE", true) } returns null
+        coEvery { shellDataSource.executeCommandDetailed(ShellCommandSpec.PackageCompileHelp) } returns
+            Result.failure(CancellationException("Probe canceled"))
+
+        var canceled = false
+        try {
+            repository.executeOptimizationCommand(AppOptimizationType.SPEED_PROFILE, true)
+        } catch (_: CancellationException) {
+            canceled = true
+        }
+
+        assertTrue(canceled)
+        assertTrue(repository.optimizationProgress.value.result is OptimizationResult.Canceled)
+        coVerify(exactly = 0) {
+            shellDataSource.executeCommandDetailed(match { it is ShellCommandSpec.PackageCompile })
+        }
     }
 
     @Test
@@ -982,6 +1114,58 @@ class AdbRepositoryImplTest {
                 stderr = ""
             )
         )
+    }
+
+    private suspend fun assertGuardPausesAfterFirstCompile(blockedSnapshot: DeviceGuardSnapshot) {
+        val firstPackage = "com.example.completed"
+        val pendingPackage = "com.example.pending"
+        val steps = listOf(
+            optimizationStep(id = 101L, runId = 1_001L, stepIndex = 0, packageName = firstPackage),
+            optimizationStep(id = 102L, runId = 1_001L, stepIndex = 1, packageName = pendingPackage)
+        )
+        var deviceSnapshot = allowedDeviceGuardSnapshot()
+        coEvery { deviceGuardRepository.getDeviceGuardSnapshot() } answers {
+            Resource.Success(deviceSnapshot)
+        }
+        coEvery { packageQuery.queryInstalledPackages() } returns listOf(firstPackage, pendingPackage)
+        coEvery { optimizationStepDao.findLatestResumableRunId("SPEED_PROFILE", true) } returns null
+        coEvery { optimizationStepDao.findStableAdjustedOutcome(any(), any(), any(), any(), any(), any()) } returns null
+        coEvery { optimizationStepDao.getStepsForRun(any()) } returns steps
+        coEvery { compilationResolver.queryPackageCompilationInfo(any(), "speed-profile") } answers {
+            compilationInfo(firstArg(), compilerFilter = "verify")
+        }
+        stubPackageDump(firstPackage, "speed-profile")
+        stubPackageDump(pendingPackage, "speed-profile")
+        coEvery {
+            shellDataSource.executeCommandDetailed(match { it is ShellCommandSpec.PackageCompile })
+        } answers {
+            deviceSnapshot = blockedSnapshot
+            Result.success(ShellCommandResult(0, """
+                DexContainerFileDexoptResult{actualCompilerFilter=speed-profile, status=PERFORMED, sizeBytes=100, sizeBeforeBytes=50}
+                Final Status: PERFORMED
+            """.trimIndent(), ""))
+        }
+
+        val result = repository.executeOptimizationCommand(AppOptimizationType.SPEED_PROFILE, true)
+
+        assertTrue(result is Resource.Error)
+        val progress = repository.optimizationProgress.value
+        assertTrue(progress.result is OptimizationResult.Paused)
+        assertFalse(progress.isRunning)
+        assertEquals(1, progress.processedCount)
+        assertEquals(1, progress.optimizedSucceededCount)
+        assertEquals(0, progress.failedOrRefusedCount)
+        assertEquals("", progress.currentAppPackage)
+        coVerify(exactly = 1) {
+            shellDataSource.executeCommandDetailed(ShellCommandSpec.PackageCompile(firstPackage, "speed-profile"))
+        }
+        coVerify(exactly = 0) {
+            shellDataSource.executeCommandDetailed(match {
+                it is ShellCommandSpec.PackageCompile && it.packageName == pendingPackage
+            })
+        }
+        coVerify(exactly = 0) { optimizationStepDao.markRunning(steps[1].id, any(), any()) }
+        coVerify(exactly = 0) { optimizationStepDao.markRunCanceled(any(), any()) }
     }
 
     private fun allowedDeviceGuardSnapshot(

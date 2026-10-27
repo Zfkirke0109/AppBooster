@@ -20,6 +20,9 @@ internal object CompileModeSupportParser {
             supportsVerboseCompile = compileSection.contains("-v[:") ||
                 compileSection.contains("-v:") ||
                 Regex("""(^|\s)-v(\s|,|$)""").containsMatchIn(compileSection),
+            supportsBackgroundPriority =
+                Regex("""(^|\s)-p(?:\s|\])""").containsMatchIn(compileSection) &&
+                    Regex("""\bPRIORITY_BACKGROUND\b""").containsMatchIn(compileSection),
             rawHelp = helpOutput
         )
     }
@@ -33,11 +36,11 @@ internal object CompileModeSupportParser {
         }
         if (start < 0) return helpOutput
 
+        val commandIndent = lines[start].takeWhile(Char::isWhitespace).length
         val end = lines.drop(start + 1).indexOfFirst { line ->
             val trimmed = line.trimStart()
             trimmed.isNotEmpty() &&
-                !line.startsWith(" ") &&
-                !line.startsWith("\t") &&
+                line.takeWhile(Char::isWhitespace).length <= commandIndent &&
                 !trimmed.startsWith("-") &&
                 !trimmed.startsWith("[")
         }
@@ -54,6 +57,7 @@ internal data class CompileModeSupportSnapshot(
     val supportedFilters: Set<String>,
     val supportsFullScope: Boolean,
     val supportsVerboseCompile: Boolean,
+    val supportsBackgroundPriority: Boolean,
     val rawHelp: String
 ) {
     fun supportFor(mode: String): CompileModeSupport {

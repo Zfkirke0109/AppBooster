@@ -1,6 +1,8 @@
 package com.tony.appbooster.presentation.screen.dashboard
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -198,12 +200,11 @@ private fun DashboardPhoneLayout(
  * Tablet two-pane layout: hero card on the left pane (40% width), activity
  * feed on the right pane (60% width), separated by a vertical divider.
  *
- * Both panes are independently scrollable and fill the available height,
- * giving users a "command center" feel where controls and logs are always
- * simultaneously visible without any scrolling.
+ * Both panes scroll independently so result details and actions remain reachable
+ * in short landscape windows and with larger text.
  */
 @Composable
-private fun DashboardTabletLayout(
+internal fun DashboardTabletLayout(
     model: MainUiModel,
     onStartOptimization: () -> Unit,
     onForceOptimize: () -> Unit,
@@ -222,6 +223,7 @@ private fun DashboardTabletLayout(
             modifier = Modifier
                 .weight(0.42f)
                 .fillMaxHeight()
+                .verticalScroll(rememberScrollState())
                 .padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.Top
         ) {

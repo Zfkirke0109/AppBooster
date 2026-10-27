@@ -15,21 +15,21 @@ internal object PackageClassifier {
      * Strong signals:
      * - codePath/resourcePath pointing to /overlay/
      * - presence of overlayTarget= in the package dump
-     * - package name patterns containing rro/overlay/auto_generated_rro
+     * - bounded RRO/overlay name components when executable-code evidence is absent
      *
      * @param packageName Package name.
      * @param dumpsysPackageOutput Raw output of `dumpsys package <packageName>`.
      * @return True if the package is overlay-like.
      */
     fun isOverlayLike(packageName: String, dumpsysPackageOutput: String?): Boolean {
+        // An executable APK stays eligible even if its name resembles a resource overlay.
+        if (dumpsysPackageOutput != null && DexoptStatusParser.parsePackageHasCode(dumpsysPackageOutput) == true) {
+            return false
+        }
         val lowerPkg = packageName.lowercase()
 
         // Name-based signal (fallback).
-        val nameSuggestsOverlay = lowerPkg.contains("auto_generated_rro") ||
-            lowerPkg.contains(".rro") ||
-            lowerPkg.contains("rro_") ||
-            lowerPkg.contains("overlay") ||
-            lowerPkg.contains("rro")
+        val nameSuggestsOverlay = lowerPkg.split('.', '_').any { it == "rro" || it == "overlay" }
 
         val dump = dumpsysPackageOutput?.lowercase().orEmpty()
         if (dump.isBlank()) return nameSuggestsOverlay

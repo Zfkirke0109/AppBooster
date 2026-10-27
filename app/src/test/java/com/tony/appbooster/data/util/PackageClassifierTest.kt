@@ -12,6 +12,17 @@ import org.junit.Test
  */
 class PackageClassifierTest {
 
+    @Test
+    fun `executable app is not excluded by an overlay-like name`() {
+        assertFalse(PackageClassifier.isOverlayLike("com.example.overlay.editor", "pkgFlags=[ HAS_CODE ]"))
+    }
+
+    @Test
+    fun `ordinary substrings do not establish an overlay without metadata`() {
+        assertFalse(PackageClassifier.isOverlayLike("com.example.arrow", null))
+        assertFalse(PackageClassifier.isOverlayLike("com.example.overlayeditor", null))
+    }
+
     // ── overlayTarget marker (definitive) ─────────────────────────────────────
 
     @Test

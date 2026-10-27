@@ -9,6 +9,9 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -43,6 +46,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -70,6 +74,7 @@ import com.tony.appbooster.presentation.ui.theme.AppBoosterTheme
  * @param onForceOptimize Callback invoked when the user requests a forced
  *   re-optimization of all apps regardless of current status.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun HeroResultPanel(
     status: HeroCardStatus,
@@ -102,194 +107,201 @@ fun HeroResultPanel(
         label = "glowAlpha"
     )
 
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        // ── Top row: icon + text + dismiss ───────────────────────────────
-        Row(
+    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+        val compact = maxWidth < 280.dp * LocalDensity.current.fontScale
+        Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Animated icon badge with optional glow
-            Box(contentAlignment = Alignment.Center) {
-                if (config.showGlow) {
-                    Surface(
-                        modifier = Modifier
-                            .size(56.dp)
-                            .scale(iconScale)
-                            .alpha(glowAlpha),
-                        shape = CircleShape,
-                        color = config.glowColor
-                    ) {}
-                }
-
-                Surface(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .scale(iconScale),
-                    shape = CircleShape,
-                    color = config.containerColor,
-                    tonalElevation = if (config.showGlow) 6.dp else 4.dp
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = config.icon,
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp),
-                            tint = config.iconTint
-                        )
-                    }
-                }
-            }
-
-            Spacer(Modifier.width(12.dp))
-
-            // Title & subtitle
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = config.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = config.subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            Spacer(Modifier.width(8.dp))
-
-            // Dismiss button
-            IconButton(onClick = onDismiss, modifier = Modifier.size(36.dp)) {
-                Icon(
-                    imageVector = Icons.Rounded.Close,
-                    contentDescription = stringResource(R.string.action_dismiss),
-                    modifier = Modifier.size(20.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        // ── Tertiary chip – AllOptimized only ────────────────────────────
-        if (config.showGlow) {
-            val allOptimized = status as HeroCardStatus.AllOptimized
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = MaterialTheme.colorScheme.tertiaryContainer
+            // ── Top row: icon + text + dismiss ───────────────────────────────
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Speed,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onTertiaryContainer
+                // Decorative badges yield room to result text in a narrow pane.
+                if (!compact) {
+                    // Animated icon badge with optional glow
+                    Box(contentAlignment = Alignment.Center) {
+                        if (config.showGlow) {
+                            Surface(
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .scale(iconScale)
+                                    .alpha(glowAlpha),
+                                shape = CircleShape,
+                                color = config.glowColor
+                            ) {}
+                        }
+
+                        Surface(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .scale(iconScale),
+                            shape = CircleShape,
+                            color = config.containerColor,
+                            tonalElevation = if (config.showGlow) 6.dp else 4.dp
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = config.icon,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(24.dp),
+                                    tint = config.iconTint
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.width(12.dp))
+                }
+
+                // Title & subtitle
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = config.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = stringResource(
-                            R.string.analysis_apps_already_optimized,
-                            allOptimized.counts.matchingCount
-                        ),
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                        text = config.subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Spacer(Modifier.width(8.dp))
+
+                // Dismiss button
+                IconButton(onClick = onDismiss, modifier = Modifier.size(36.dp)) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = stringResource(R.string.action_dismiss),
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
-        }
 
-        if (status !is HeroCardStatus.AllOptimized) {
-            val counts = status.counts
-            OptimizationStatsRow(
-                needsOptimizationCount = 0,
-                optimizedCount = counts.matchingCount,
-                optimizedLabel = stringResource(
-                    R.string.reliability_matching_filter,
-                    status.optimizationMode.requestedCompileMode
-                ),
-                unprocessedCount = counts.unprocessedCount,
-                noProfileCount = counts.noProfileCount,
-                failedCount = counts.failedCount,
-                osAdjustedCount = counts.osAdjustedCount,
-                skippedNotApplicableCount = counts.skippedNotApplicableCount,
-                verificationUnavailableCount = counts.verificationUnavailableCount,
-                showNoProfile = status.optimizationMode == AppOptimizationType.SPEED_PROFILE
-            )
-        }
-
-        // ── Action buttons ───────────────────────────────────────────────
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            when {
-                // AllOptimized: force re-optimize is the main CTA
-                config.showGlow -> {
-                    FilledTonalButton(
-                        onClick = onForceOptimize,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                            horizontal = 16.dp, vertical = 10.dp
-                        )
+            // ── Tertiary chip – AllOptimized only ────────────────────────────
+            if (config.showGlow) {
+                val allOptimized = status as HeroCardStatus.AllOptimized
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.tertiaryContainer
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.RocketLaunch,
+                            imageVector = Icons.Rounded.Speed,
                             contentDescription = null,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onTertiaryContainer
                         )
-                        Spacer(Modifier.width(6.dp))
                         Text(
-                            text = stringResource(R.string.action_force_optimize_short),
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.SemiBold
+                            text = stringResource(
+                                R.string.analysis_apps_already_optimized,
+                                allOptimized.counts.matchingCount
+                            ),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
                         )
                     }
                 }
+            }
 
-                // Completed/Canceled: run again + force optimize
-                config.showRunAgain -> {
-                    FilledTonalButton(
-                        onClick = onRunAgain,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                            horizontal = 16.dp, vertical = 10.dp
-                        )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.PlayArrow,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = stringResource(R.string.action_run_again),
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.SemiBold
-                        )
+            if (status !is HeroCardStatus.AllOptimized) {
+                val counts = status.counts
+                OptimizationStatsRow(
+                    needsOptimizationCount = 0,
+                    optimizedCount = counts.matchingCount,
+                    optimizedLabel = stringResource(
+                        R.string.reliability_matching_filter,
+                        status.optimizationMode.requestedCompileMode
+                    ),
+                    unprocessedCount = counts.unprocessedCount,
+                    noProfileCount = counts.noProfileCount,
+                    failedCount = counts.failedCount,
+                    osAdjustedCount = counts.osAdjustedCount,
+                    skippedNotApplicableCount = counts.skippedNotApplicableCount,
+                    verificationUnavailableCount = counts.verificationUnavailableCount,
+                    showNoProfile = status.optimizationMode == AppOptimizationType.SPEED_PROFILE
+                )
+            }
+
+            // ── Action buttons ───────────────────────────────────────────────
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                maxItemsInEachRow = if (compact) 1 else 2,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                when {
+                    // AllOptimized: force re-optimize is the main CTA
+                    config.showGlow -> {
+                        FilledTonalButton(
+                            onClick = onForceOptimize,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                horizontal = 16.dp, vertical = 10.dp
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.RocketLaunch,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = stringResource(R.string.action_force_optimize_short),
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                     }
 
-                    TextButton(onClick = onForceOptimize) {
-                        Icon(
-                            imageVector = Icons.Rounded.RocketLaunch,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp),
-                            tint = MaterialTheme.colorScheme.tertiary
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(
-                            text = stringResource(R.string.action_force_optimize_short),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.tertiary
-                        )
+                    // Completed/Canceled: run again + force optimize
+                    config.showRunAgain -> {
+                        FilledTonalButton(
+                            onClick = onRunAgain,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                horizontal = 16.dp, vertical = 10.dp
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = stringResource(R.string.action_run_again),
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+
+                        TextButton(onClick = onForceOptimize) {
+                            Icon(
+                                imageVector = Icons.Rounded.RocketLaunch,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.tertiary
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                text = stringResource(R.string.action_force_optimize_short),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.tertiary
+                            )
+                        }
                     }
                 }
             }
