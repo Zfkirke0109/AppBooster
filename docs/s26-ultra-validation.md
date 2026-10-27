@@ -122,3 +122,21 @@ image, retaining every instrumentation assertion and the SDK/shell identity
 checks. This suite does not assert hardware-rendered screenshots. The full-image
 navigation and thumbnail workarounds are no longer needed for the ATD job.
 Physical Samsung observations remain separate from emulator runtime evidence.
+
+## Completed 1.8.1 run and 1.8.2 corrections
+
+The October 27 full-scope speed run completed in 30 minutes 46 seconds. Its export
+reconciled 600 targets: 412 newly verified, 162 reported already matching, eight
+Android-adjusted results, 18 not applicable, and no failed or unprocessed packages.
+All 421 attempted commands used background priority. No failed/canceled ART status
+was found in those exported attempts. Retained post-run Logcat and exit history
+showed no new app crash or ANR; the bounded Logcat capture is not a complete record
+of every event throughout the run.
+
+Source-level regressions exposed failure-status classification independent of that
+successful device run. Version 1.8.2 rejects explicit ART failures/cancellations
+despite exit zero, prevents those measurement results from authorizing after
+captures, remembers an unsupported legacy check, and prevents executable APKs
+from being excluded by overlay-name substrings. The landscape pane scrolls and
+its result actions adapt to narrow widths. See the
+[post-run fix plan](plans/2026-10-27-post-run-fixes.md) for the acceptance tests.

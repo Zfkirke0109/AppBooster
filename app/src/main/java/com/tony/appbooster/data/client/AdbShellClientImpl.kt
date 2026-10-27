@@ -1,6 +1,7 @@
 package com.tony.appbooster.data.client
 
 import android.util.Log
+import com.tony.appbooster.data.util.CompileCheckSupport
 import com.tony.appbooster.domain.client.AdbShellClient
 import com.tony.appbooster.domain.client.ShizukuShellClient
 import com.tony.appbooster.domain.model.common.ShellCommandResult
@@ -88,6 +89,7 @@ class AdbShellClientImpl @Inject constructor(
             throw failure
         }
 
+        val commandResult = ShellCommandResult(result.exitCode, result.output, result.error)
         if (!result.isSuccess) {
             // Recheck live access before attributing a failure to this package.
             ensureConnected()
@@ -108,18 +110,16 @@ class AdbShellClientImpl @Inject constructor(
                 "operation=${command.logOperationName()} exitCode=${result.exitCode} " +
                     "stderrChars=${result.error.length} stdoutChars=${result.output.length} " +
                     "detailSource=$detailSource detail=$boundedDetail"
-            if (command == ShellCommandSpec.PackageCompileHelp) {
-                Log.d(TAG, "$message capabilityProbe=true fallback=PackageHelp")
-            } else {
-                Log.e(TAG, message)
+            when {
+                command == ShellCommandSpec.PackageCompileHelp ->
+                    Log.d(TAG, "$message capabilityProbe=true fallback=PackageHelp")
+                command is ShellCommandSpec.PackageCompileCheck && CompileCheckSupport.isUnsupported(commandResult) ->
+                    Log.d(TAG, "$message capabilityProbe=true fallback=ConservativeEligibility")
+                else -> Log.e(TAG, message)
             }
         }
 
-        return ShellCommandResult(
-            exitCode = result.exitCode,
-            stdout = result.output,
-            stderr = result.error
-        )
+        return commandResult
     }
 
     override suspend fun execute(command: ShellCommandSpec): String {

@@ -1,5 +1,7 @@
 package com.tony.appbooster.domain.model.performance
 
+import com.tony.appbooster.domain.model.telemetry.OptimizationStepOutcome
+
 /** An explicitly selected launcher app; version identity protects paired measurements. */
 data class MeasurementApp(val packageName: String, val label: String, val component: String,
     val versionCode: Long, val lastUpdateTime: Long)
@@ -26,7 +28,11 @@ data class MeasurementPhase(val app: MeasurementApp, val buildFingerprint: Strin
 /** Verified command evidence, kept distinct from timing evidence. */
 data class MeasurementCompile(val startedAtMs: Long, val finishedAtMs: Long, val durationMs: Long,
     val command: String, val exitCode: Int, val outcome: String, val actualFilter: String?,
-    val artSizeBeforeBytes: Long?, val artSizeAfterBytes: Long?, val stdout: String, val stderr: String)
+    val artSizeBeforeBytes: Long?, val artSizeAfterBytes: Long?, val stdout: String, val stderr: String) {
+    /** Whether compilation permits capturing an after phase. */
+    val isSuccessful: Boolean
+        get() = exitCode == 0 && outcome != OptimizationStepOutcome.FAILED_OR_REFUSED.name
+}
 
 /** Durable session; partial samples never count as a completed before/after phase. */
 data class PerformanceSession(val id: Long, val app: MeasurementApp, val before: MeasurementPhase? = null,

@@ -1383,9 +1383,24 @@ class AdbRepositoryImpl @Inject constructor(
                     )
                     verificationUnavailableCount++
                 }
-                OptimizationStepOutcome.FAILED_OR_REFUSED -> error(
-                    "Nonzero compile results must be handled before ART verification"
-                )
+                OptimizationStepOutcome.FAILED_OR_REFUSED -> {
+                    optimizationStepDao.markFailed(
+                        id = step.id,
+                        exitCode = commandResult.exitCode,
+                        stdout = commandResult.stdout,
+                        stderr = commandResult.stderr.ifBlank { verification.reason },
+                        updatedAtMs = resultRecordedAtMs
+                    )
+                    logger.addLog("Failure: $packageName - ${verification.reason}")
+                    logger.addLogEntry(
+                        LogEntryType.ERROR,
+                        messageKey = LogMessageKey.OPTIMIZATION_FAILED_APP,
+                        packageName = packageName,
+                        detail = verification.reason
+                    )
+                    failedPackages += packageName
+                    failedCount++
+                }
             }
             recordOutcome(
                 step = step,
@@ -1496,11 +1511,12 @@ class AdbRepositoryImpl @Inject constructor(
     ): PackageCompileVerification {
         val combinedOutput = "${commandResult.stdout}\n${commandResult.stderr}"
         val parsedArt = DexoptStatusParser.parseArtCompileResult(combinedOutput)
+        val artFailure = parsedArt.failureStatus
         val hasContainerEvidence = combinedOutput.contains("DexContainerFileDexoptResult{")
         val verboseFilter = parsedArt.actualCompilerFilter
             ?: if (!hasContainerEvidence) DexoptStatusParser.parseCompilerFilterFromOutput(combinedOutput) else null
 
-        val dumpFilter = if (verboseFilter == null && !hasContainerEvidence) runCatching {
+        val dumpFilter = if (artFailure == null && verboseFilter == null && !hasContainerEvidence) runCatching {
             shellDataSource.executeCommandDetailed(ShellCommandSpec.PackageDump(packageName))
                 .getOrNull()
                 ?.takeIf { it.isSuccess }
@@ -1508,7 +1524,7 @@ class AdbRepositoryImpl @Inject constructor(
                 ?.takeUnless { it == "unknown-present" }
         }.getOrNull() else null
 
-        val resolverFilter = if (dumpFilter == null && verboseFilter == null && !hasContainerEvidence) {
+        val resolverFilter = if (artFailure == null && dumpFilter == null && verboseFilter == null && !hasContainerEvidence) {
             // Package state changed after compilation. Refresh resolver caches only
             // when direct package/verbose evidence could not verify the result.
             compilationResolver.resetCaches()
@@ -1522,6 +1538,7 @@ class AdbRepositoryImpl @Inject constructor(
         val actualFilter = verboseFilter ?: dumpFilter ?: resolverFilter
         val skipped = (parsedArt.finalStatus ?: parsedArt.status) == "SKIPPED"
         val outcome = when {
+            artFailure != null -> OptimizationStepOutcome.FAILED_OR_REFUSED
             skipped -> OptimizationStepOutcome.SKIPPED_NOT_APPLICABLE
             actualFilter == null -> OptimizationStepOutcome.VERIFICATION_UNAVAILABLE
             DexoptStatusParser.isRequestedFilterSatisfied(
@@ -1531,6 +1548,7 @@ class AdbRepositoryImpl @Inject constructor(
             else -> OptimizationStepOutcome.OS_ADJUSTED_FILTER
         }
         val source = when {
+            artFailure != null -> VERIFICATION_SOURCE_VERBOSE_OUTPUT
             verboseFilter != null -> VERIFICATION_SOURCE_VERBOSE_OUTPUT
             dumpFilter != null -> VERIFICATION_SOURCE_PACKAGE_DUMP
             resolverFilter != null -> VERIFICATION_SOURCE_RESOLVER
@@ -1546,6 +1564,7 @@ class AdbRepositoryImpl @Inject constructor(
             stableOsAdjusted = outcome == OptimizationStepOutcome.OS_ADJUSTED_FILTER &&
                 mode.requestedCompileMode == "speed" && !mode.useFullDexoptScope,
             reason = when {
+                outcome == OptimizationStepOutcome.FAILED_OR_REFUSED -> "ART reported $artFailure."
                 outcome == OptimizationStepOutcome.VERIFIED_REQUESTED_FILTER -> "Verified"
                 outcome == OptimizationStepOutcome.SKIPPED_NOT_APPLICABLE ->
                     "ART skipped this package as not applicable."

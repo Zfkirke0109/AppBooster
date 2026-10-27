@@ -19,6 +19,12 @@ internal object DexoptStatusParser {
         val sizeBytes: Long?,
         val sizeBeforeBytes: Long?
     ) {
+        /** Explicit ART failure wins over a matching filter and the shell exit code. */
+        val failureStatus: String?
+            get() = listOf(status, finalStatus).firstOrNull {
+                it == "FAILED" || it == "CANCELLED" || it == "CANCELED"
+            }
+
         val storageDeltaBytes: Long?
             get() = if (sizeBytes != null && sizeBeforeBytes != null) {
                 sizeBytes - sizeBeforeBytes
@@ -205,7 +211,7 @@ internal object DexoptStatusParser {
         val art = parseArtCompileResult(output)
         val skipped = (art.finalStatus ?: art.status) == "SKIPPED"
         val outcome = when {
-            exitCode != 0 -> OptimizationStepOutcome.FAILED_OR_REFUSED
+            exitCode != 0 || art.failureStatus != null -> OptimizationStepOutcome.FAILED_OR_REFUSED
             skipped -> OptimizationStepOutcome.SKIPPED_NOT_APPLICABLE
             art.actualCompilerFilter == null -> OptimizationStepOutcome.VERIFICATION_UNAVAILABLE
             isRequestedFilterSatisfied(requestedFilter, art.actualCompilerFilter) ->
