@@ -1214,6 +1214,10 @@ class AdbRepositoryImpl @Inject constructor(
                 continue
             }
 
+            // Battery and thermal state can change while a long batch is running.
+            // Pause before starting another compile, preserving the pending step.
+            ensureDeviceGuardAllowsOptimization()
+
             val command = ShellCommandSpec.PackageCompile(
                 packageName = packageName,
                 mode = compileMode,

@@ -2,8 +2,8 @@
 
 The connected handset on October 26, 2026 is SM-S948U (`m3q`), Android 17/API 37,
 One UI 9 (`90000`), build S948USQS4BZIG, patch 2026-10-05. DroidBridge 0.5.8
-provides Shizuku shell UID 2000; root is unavailable. Installed OptiDroid is
-1.7.4/10704. The update uses the existing 1.7.4 Android 17 code line, not the
+provides Shizuku shell UID 2000; root is unavailable. The initial installed version
+was 1.7.4/10704. The update uses the existing 1.7.4 Android 17 code line, not the
 older default branch.
 
 ## Observed hardware and ART
@@ -81,3 +81,36 @@ crash-log read when investigating an app failure.
    Do not infer a speedup from successful compilation or a shorter repeat run.
 
 See [primary-source research](s26-ultra-art-research.md).
+
+## Installed 1.8.0 and follow-up diagnostics
+
+Version 1.8.0/10800 installed in place on October 26 at 23:17 PDT. Package Manager
+accepted the update, retained the original first-install time and app-data inode,
+and the installed APK SHA-256 matched the verified signed build. The observed main
+activity launched successfully. A background-priority speed-profile smoke test
+returned PERFORMED and a separate dexopt query confirmed the arm64 filter.
+
+On October 27 the unlocked phone rendered the Settings and Dashboard screens.
+An existing full-scope speed run exposed the actual app-generated command with
+`-p PRIORITY_BACKGROUND`; its parent process was OptiDroid's Shizuku shell service.
+The automatically exported canceled-run telemetry recorded 105 attempted commands,
+all with background priority, 103 newly verified requested-filter results, 59
+already-matching packages, one Android-adjusted filter, two not-applicable packages,
+zero failed/refused commands and 435 unprocessed packages. Totals reconciled to 600.
+The 162 matching results shown in the UI include the 59 already-matching packages.
+No new app crash or ANR exit record was observed in bounded diagnostics.
+
+The run continued after battery fell below the configured 35% guard. Source
+inspection confirmed that battery and thermal state were checked only at batch
+start; storage alone was checked before each compile. The run was stopped using
+the app's normal Stop control. Version 1.8.1 rechecks the existing device guard
+immediately before each compile, before marking that step running. Low battery
+or severe thermal state then uses the existing paused-run path, preserving
+completed counts and pending steps. An in-flight compile can finish before the
+next boundary check. Regression cases reproduce battery and thermal changes after
+the first successful compile. No battery or thermal readings were falsified on
+the physical handset.
+
+Landscape observation at the phone's 1.08 font scale also showed cramped wrapping
+in the result card. This is a separate UI finding; it does not establish a compile
+failure or a startup/battery improvement.
