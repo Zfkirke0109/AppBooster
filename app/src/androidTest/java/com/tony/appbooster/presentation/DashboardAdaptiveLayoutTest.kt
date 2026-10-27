@@ -9,8 +9,12 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -20,11 +24,12 @@ import com.tony.appbooster.domain.model.settings.AppOptimizationType
 import com.tony.appbooster.presentation.screen.dashboard.DashboardTabletLayout
 import com.tony.appbooster.presentation.viewmodel.main.MainUiModel
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** Keeps result actions usable in the S26 landscape pane and with larger text. */
+/** Keeps dashboard text and actions usable after landscape navigation insets and larger text. */
 @RunWith(AndroidJUnit4::class)
 class DashboardAdaptiveLayoutTest {
     @get:Rule
@@ -38,6 +43,62 @@ class DashboardAdaptiveLayoutTest {
     @Test
     fun landscapeResultActionsRemainReachableWithLargeText() {
         assertResultActionsRemainReachable(fontScale = 1.5f)
+    }
+
+    @Test
+    fun landscapeIdleTitleDoesNotSplitWordsAtS26FontScale() {
+        assertIdleContentRemainsUsable(fontScale = 1.08f)
+    }
+
+    @Test
+    fun landscapeIdleTitleDoesNotSplitWordsWithLargeText() {
+        assertIdleContentRemainsUsable(fontScale = 1.5f)
+    }
+
+    private fun assertIdleContentRemainsUsable(fontScale: Float) {
+        val actions = mutableListOf<String>()
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(1f, fontScale)) {
+                MaterialTheme {
+                    // 832 dp window minus the navigation rail and system insets.
+                    Box(Modifier.requiredSize(664.dp, 320.dp)) {
+                        DashboardTabletLayout(
+                            model = MainUiModel(
+                                optimizationMode = AppOptimizationType.ADVANCED_FULL_COMPILE
+                            ),
+                            onStartOptimization = { actions += "start" },
+                            onForceOptimize = {},
+                            onStopOptimization = {},
+                            onDismissResult = {},
+                            onAnalyze = { actions += "scan" },
+                            onStopAnalysis = {}
+                        )
+                    }
+                }
+            }
+        }
+
+        val title = "Full Compile / DEXopt All"
+        compose.onNodeWithText(title, useUnmergedTree = true)
+            .performScrollTo()
+            .assertIsDisplayed()
+            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { getLayout ->
+                val layouts = mutableListOf<TextLayoutResult>()
+                assertTrue(getLayout(layouts))
+                val layout = layouts.single()
+                for (line in 0 until layout.lineCount - 1) {
+                    val end = layout.getLineEnd(line, visibleEnd = true)
+                    val nextStart = layout.getLineStart(line + 1)
+                    assertTrue(
+                        "Mode title splits a word at line ${line + 1}",
+                        title.substring(end, nextStart).any { it.isWhitespace() }
+                    )
+                }
+            }
+
+        compose.onNodeWithContentDescription("Start").performScrollTo().assertIsDisplayed().performClick()
+        compose.onNodeWithText("Tap to scan apps").performScrollTo().assertIsDisplayed().performClick()
+        compose.runOnIdle { assertEquals(listOf("start", "scan"), actions) }
     }
 
     private fun assertResultActionsRemainReachable(fontScale: Float) {
@@ -59,8 +120,8 @@ class DashboardAdaptiveLayoutTest {
         compose.setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f, fontScale)) {
                 MaterialTheme {
-                    // Logical landscape bounds; density 1 keeps the test inside the emulator display.
-                    Box(Modifier.requiredSize(832.dp, 320.dp)) {
+                    // Content bounds after the S26 landscape navigation rail and system insets.
+                    Box(Modifier.requiredSize(664.dp, 320.dp)) {
                         DashboardTabletLayout(
                             model = model,
                             onStartOptimization = { actions += "run" },
