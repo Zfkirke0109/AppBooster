@@ -158,6 +158,52 @@ class AdbRepositoryImplTest {
     }
 
     @Test
+    fun `ART failed with exit zero is counted as failure instead of verified success`() = runTest {
+        assertArtStatusIsRecordedAsFailure("FAILED")
+    }
+
+    @Test
+    fun `ART cancelled with exit zero is counted as failure instead of verified success`() = runTest {
+        assertArtStatusIsRecordedAsFailure("CANCELLED")
+    }
+
+    @Test
+    fun `ART canceled with exit zero is counted as failure instead of verified success`() = runTest {
+        assertArtStatusIsRecordedAsFailure("CANCELED")
+    }
+
+    private suspend fun assertArtStatusIsRecordedAsFailure(status: String) {
+        val pkg = "com.example.artfailure"
+        val step = optimizationStep(id = 92L, runId = 902L, stepIndex = 0, packageName = pkg)
+        val output = """
+            [$pkg]
+            DexContainerFileDexoptResult{actualCompilerFilter=speed, status=$status}
+            Final Status: $status
+        """.trimIndent()
+        coEvery { packageQuery.queryInstalledPackages() } returns listOf(pkg)
+        coEvery { optimizationStepDao.findLatestResumableRunId("ADVANCED_FULL_COMPILE", true) } returns null
+        coEvery { optimizationStepDao.getStepsForRun(any()) } returns listOf(step)
+        coEvery { compilationResolver.queryPackageCompilationInfo(pkg, "speed") } returns
+            compilationInfo(pkg, compilerFilter = "verify")
+        coEvery { shellDataSource.executeCommandDetailed(ShellCommandSpec.PackageCompileHelp) } returns
+            Result.success(ShellCommandResult(0, ONE_UI_85_PACKAGE_HELP, ""))
+        coEvery { shellDataSource.executeCommandDetailed(match { it is ShellCommandSpec.PackageCompile }) } returns
+            Result.success(ShellCommandResult(0, output, ""))
+
+        val result = repository.executeOptimizationCommand(AppOptimizationType.ADVANCED_FULL_COMPILE, true)
+
+        assertTrue(result is Resource.Success)
+        assertEquals(0, repository.optimizationProgress.value.optimizedSucceededCount)
+        assertEquals(1, repository.optimizationProgress.value.failedOrRefusedCount)
+        assertEquals(1, repository.optimizationProgress.value.processedCount)
+        assertEquals(OptimizationResult.CompletedWithIssues, repository.optimizationProgress.value.result)
+        coVerify(exactly = 1) {
+            optimizationStepDao.markFailed(step.id, 0, output, match { it.contains(status) }, any())
+        }
+        verify(exactly = 0) { compilationResolver.markOptimized(pkg) }
+    }
+
+    @Test
     fun `given compile command fails for one package when optimizing then continues and completes remaining packages`() = runTest {
         val goodPackage = "com.example.good"
         val failingPackage = "com.example.bad"

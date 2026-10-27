@@ -203,7 +203,7 @@ private fun DashboardPhoneLayout(
  * simultaneously visible without any scrolling.
  */
 @Composable
-private fun DashboardTabletLayout(
+internal fun DashboardTabletLayout(
     model: MainUiModel,
     onStartOptimization: () -> Unit,
     onForceOptimize: () -> Unit,

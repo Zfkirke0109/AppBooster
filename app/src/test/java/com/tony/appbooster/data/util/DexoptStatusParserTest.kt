@@ -16,6 +16,55 @@ import org.junit.Test
 class DexoptStatusParserTest {
 
     @Test
+    fun `ART failure overrides a matching filter and zero shell exit`() {
+        assertArtStatusIsFailed("FAILED")
+    }
+
+    @Test
+    fun `ART cancelled result is not a verified optimization`() {
+        assertArtStatusIsFailed("CANCELLED")
+    }
+
+    @Test
+    fun `ART canceled result is not a verified optimization`() {
+        assertArtStatusIsFailed("CANCELED")
+    }
+
+    @Test
+    fun `failed container cannot be hidden by a successful final status`() {
+        val output = """
+            DexContainerFileDexoptResult{actualCompilerFilter=speed, status=PERFORMED}
+            DexContainerFileDexoptResult{actualCompilerFilter=speed, status=FAILED}
+            Final Status: PERFORMED
+        """.trimIndent()
+
+        val result = DexoptStatusParser.classifyCompileResult("speed", 0, output)
+
+        assertEquals(OptimizationStepOutcome.FAILED_OR_REFUSED, result.outcome)
+        assertFalse(result.stableOsAdjusted)
+    }
+
+    @Test
+    fun `failed final status needs no filter to prove failure`() {
+        val result = DexoptStatusParser.classifyCompileResult("speed", 0, "Final Status: FAILED")
+
+        assertEquals(OptimizationStepOutcome.FAILED_OR_REFUSED, result.outcome)
+    }
+
+    private fun assertArtStatusIsFailed(status: String) {
+        val output = """
+            DexContainerFileDexoptResult{actualCompilerFilter=speed, status=$status}
+            Final Status: $status
+        """.trimIndent()
+
+        val result = DexoptStatusParser.classifyCompileResult("speed", 0, output)
+
+        assertEquals(OptimizationStepOutcome.FAILED_OR_REFUSED, result.outcome)
+        assertEquals("speed", result.art.actualCompilerFilter)
+        assertFalse(result.stableOsAdjusted)
+    }
+
+    @Test
     fun `live S26 Android 17 profile compilation is verified with complete size evidence`() {
         val output = javaClass.getResource("/s26-profile-compile.art")?.readText()
             ?: error("Missing S26 ART fixture")
