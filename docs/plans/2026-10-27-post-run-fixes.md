@@ -40,3 +40,19 @@ serialized execution, cancellation, device guards, and storage reserve.
 
 Private telemetry, app inventories, Logcat, APKs, and device-specific install paths
 are not source artifacts and must not be committed.
+
+## Unlocked follow-up: idle landscape header
+
+The signed 1.8.2 physical check found a separate READY-phase layout defect:
+its mode icon and Start button squeezed the title into broken word fragments.
+Two new Android 17 tests reproduce this at font scales 1.08 and 1.5, using
+664 x 320 logical content bounds after navigation/system insets. Both fail
+with “Mode title splits a word at line 2”; the other 29 Android tests pass.
+Existing result-action tests now also use those narrower content bounds.
+
+Acceptance: in narrow panes or with larger text, keep icon and Start together
+and give title/description a separate full-width row. Preserve full text,
+Start and analysis callbacks, disabled/loading state, and the wide arrangement.
+Only layout, regression coverage and the patch version change in 1.8.3.
+The persisted completed run remains available in Settings runtime telemetry;
+the dashboard's transient idle state after process restart is existing behavior.
