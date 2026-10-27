@@ -114,3 +114,11 @@ the physical handset.
 Landscape observation at the phone's 1.08 font scale also showed cramped wrapping
 in the result card. This is a separate UI finding; it does not establish a compile
 failure or a startup/battery improvement.
+
+The unchanged app code passed all 342 JVM tests and all 27 Android 17 tests on the
+PR run. The push run repeatedly hit the full Google APIs emulator's pre-test
+`mapper.ranchu` DMA assertion. Runtime CI now uses the SDK's API 37 `google_atd`
+image, retaining every instrumentation assertion and the SDK/shell identity
+checks. This suite does not assert hardware-rendered screenshots. The full-image
+navigation and thumbnail workarounds are no longer needed for the ATD job.
+Physical Samsung observations remain separate from emulator runtime evidence.

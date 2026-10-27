@@ -47,7 +47,10 @@ jobs:
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: '37.0'
-          target: google_apis
+          # The full Google APIs image intermittently aborts in mapper.ranchu
+          # during launcher/SystemUI startup, before instrumentation can start.
+          # Use the API 37 automated-test image for the same app-level tests.
+          target: google_atd
           arch: x86_64
           # avdmanager's generic device used a 64 MiB heap and never booted API 37.
           # Use an explicit phone profile and memory budget for the modern image.
@@ -56,17 +59,18 @@ jobs:
           heap-size: 512M
           # API 37 Google services fill the generic userdata partition before APK install.
           disk-size: 8192M
-          # Use software rendering; select three-button navigation after boot to
-          # avoid API 37's mapper.ranchu crash in gesture-bar region sampling.
-          # The preparation script disables Recents thumbnails on this disposable
-          # emulator: GLDirectMem does not prevent its API 37 DMA readback crash.
+          # ATD avoids the full image's launcher/SystemUI graphics workload.
+          # This suite checks app semantics and runtime behavior, not rendered pixels.
           emulator-options: -no-window -gpu software -no-snapshot -noaudio -no-boot-anim -camera-back none -camera-front none -accel on -logcat '*:E'
           disable-animations: true
           pre-emulator-launch-script: |
             adb start-server
             "$ANDROID_HOME/emulator/emulator" -accel-check
           script: |
-            bash .github/scripts/prepare-android-test-environment.sh
+            set -eu
+            test "$(adb shell getprop ro.kernel.qemu | tr -d '\r')" = 1
+            test "$(adb shell getprop ro.build.version.sdk | tr -d '\r')" = 37
+            test "$(adb shell id -u | tr -d '\r')" = 2000
             adb shell getprop ro.build.version.release
             adb shell getprop ro.build.version.sdk
             adb shell df -h /data
